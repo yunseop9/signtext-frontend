@@ -85,9 +85,6 @@ def _to_int(value):
 
 
 def load_disfa_error_ranges(raw_dir: Path) -> dict[str, list[tuple[int, int]]]:
-    """
-    Error_LOG_Sheet.xls에서 landmark tracking 오류 frame range를 읽는다.
-    """
     xls_path = raw_dir / "Error_LOG_Sheet.xls"
 
     if not xls_path.exists():
@@ -269,17 +266,11 @@ def make_raw_score(row: pd.Series, mode: str) -> float:
 
 
 def score_to_label(score: float) -> int:
-    """
-    DISFA intensity 0~5를 3단계로 변환.
-    0~1: weak
-    2~3: normal
-    4~5: strong
-    """
     if score <= 1:
-        return 0
+        return 0  # weak
     if score <= 3:
-        return 1
-    return 2
+        return 1  # normal
+    return 2      # strong
 
 
 def make_280_frame_feature(
@@ -287,12 +278,11 @@ def make_280_frame_feature(
     prev_norm_flat: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    280차원 frame feature 생성.
+    1프레임에서 280차원 feature 생성.
+    단, 이 파일은 1프레임 데이터를 저장하지 않고,
+    30프레임 시퀀스를 만들기 위한 중간 feature로만 사용한다.
 
-    16차원 요약 feature
-    + 132차원 정규화 landmark
-    + 132차원 delta
-    = 280차원
+    16 summary + 132 normalized landmark + 132 delta = 280
     """
     summary_16 = extract_degree_features_from_points(points)
 
@@ -320,7 +310,7 @@ def save_json(path: Path, data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def build_wide_and_sequence_dataset(
+def build_sequence_30x280_dataset(
     raw_dir: Path,
     work_dir: Path,
     out_dir: Path,
@@ -339,14 +329,9 @@ def build_wide_and_sequence_dataset(
     print(f"Found {len(subject_dirs)} subject folders.")
     print(list(subject_dirs.keys()))
 
-    X_wide = []
-    y_wide = []
-    meta_wide_rows = []
-
     X_seq = []
     y_seq = []
     meta_seq_rows = []
-
     error_rows = []
 
     removed_by_error_log = 0
@@ -379,7 +364,6 @@ def build_wide_and_sequence_dataset(
 
         subject_features = []
         subject_scores = []
-        subject_labels = []
         subject_frames = []
 
         prev_norm_flat = None
@@ -403,25 +387,9 @@ def build_wide_and_sequence_dataset(
                 feature_280, prev_norm_flat = make_280_frame_feature(pts, prev_norm_flat)
 
                 score = make_raw_score(au_by_frame[frame], mode=mode)
-                label = score_to_label(score)
-
-                X_wide.append(feature_280)
-                y_wide.append(label)
-
-                meta_wide_rows.append({
-                    "subject": subject,
-                    "frame": frame,
-                    "label": label,
-                    "label_name": LABEL_NAMES[label],
-                    "score": score,
-                    "feature_dim": 280,
-                    "landmark_file": str(lm_path),
-                    **{f"AU{au}": float(au_by_frame[frame][f"AU{au}"]) for au in AU_LIST},
-                })
 
                 subject_features.append(feature_280)
                 subject_scores.append(score)
-                subject_labels.append(label)
                 subject_frames.append(frame)
 
             except Exception as e:
@@ -445,6 +413,7 @@ def build_wide_and_sequence_dataset(
 
             seq_x = subject_features[start:end]
 
+            # 시퀀스 내 가장 강한 표정 intensity 기준으로 라벨 생성
             seq_score = float(np.max(subject_scores[start:end]))
             seq_label = score_to_label(seq_score)
 
@@ -463,71 +432,14 @@ def build_wide_and_sequence_dataset(
                 "feature_dim": int(seq_x.shape[1]),
             })
 
-    if not X_wide:
-        raise RuntimeError("No wide frame samples were created.")
-
     if not X_seq:
         raise RuntimeError("No sequence samples were created.")
-
-    X_wide = np.asarray(X_wide, dtype=np.float32)
-    y_wide = np.asarray(y_wide, dtype=np.int64)
 
     X_seq = np.asarray(X_seq, dtype=np.float32)
     y_seq = np.asarray(y_seq, dtype=np.int64)
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1-frame 280D output
-    np.save(out_dir / f"Xwide_{mode}.npy", X_wide)
-    np.save(out_dir / f"ywide_{mode}.npy", y_wide)
-
-    meta_wide_df = pd.DataFrame(meta_wide_rows)
-    meta_wide_df.to_csv(
-        out_dir / f"metawide_{mode}.csv",
-        index=False,
-        encoding="utf-8-sig",
-    )
-
-    label_map_wide = {
-        "label_to_idx": {
-            "weak": 0,
-            "normal": 1,
-            "strong": 2,
-        },
-        "idx_to_label": {
-            "0": "weak",
-            "1": "normal",
-            "2": "strong",
-        },
-        "mode": mode,
-        "feature_type": "summary16 + normalized_landmark132 + delta132",
-        "feature_dim": 280,
-        "input_shape": [280],
-        "source": "DISFA Landmark_Points + ActionUnit_Labels",
-        "error_log_sheet_used": True,
-    }
-
-    preprocess_meta_wide = {
-        "mode": mode,
-        "dataset_type": "1_frame_280d",
-        "num_samples": int(len(X_wide)),
-        "feature_dim": 280,
-        "x_shape": list(X_wide.shape),
-        "y_shape": list(y_wide.shape),
-        "label_rule": "0~1 weak, 2~3 normal, 4~5 strong",
-        "feature_rule": "16 summary features + 132 normalized facial landmarks + 132 temporal delta",
-        "anger_aus": ANGER_AUS,
-        "au_list": AU_LIST,
-        "error_log_sheet_used": True,
-        "removed_by_error_log": int(removed_by_error_log),
-        "skipped_no_au": int(skipped_no_au),
-    }
-
-    save_json(out_dir / f"label_map_wide_{mode}.json", label_map_wide)
-    save_json(out_dir / f"preprocess_meta_wide_{mode}.json", preprocess_meta_wide)
-    joblib.dump(label_map_wide, out_dir / f"label_info_wide_{mode}.joblib")
-
-    # 30-frame sequence output
     np.save(out_dir / f"Xseq_{mode}.npy", X_seq)
     np.save(out_dir / f"yseq_{mode}.npy", y_seq)
 
@@ -561,7 +473,7 @@ def build_wide_and_sequence_dataset(
 
     preprocess_meta_seq = {
         "mode": mode,
-        "dataset_type": "30_frame_280d_sequence",
+        "dataset_type": "30_frame_280d_sequence_only",
         "num_sequences": int(len(X_seq)),
         "seq_len": seq_len,
         "stride": stride,
@@ -583,23 +495,16 @@ def build_wide_and_sequence_dataset(
 
     error_df = pd.DataFrame(error_rows)
     error_df.to_csv(
-        out_dir / f"error_log_wide_seq_{mode}.csv",
+        out_dir / f"error_log_seq_{mode}.csv",
         index=False,
         encoding="utf-8-sig",
     )
 
-    print("\n[DONE] DISFA 280D frame and 30x280D sequence datasets created.")
-
-    print("\n[1-frame 280D]")
-    print(f"Xwide shape: {X_wide.shape}")
-    print(f"ywide shape: {y_wide.shape}")
-    print("Label counts:")
-    print(meta_wide_df["label_name"].value_counts())
-
-    print("\n[30-frame x 280D sequence]")
+    print("\n[DONE] DISFA 30-frame x 280D sequence dataset created.")
     print(f"Xseq shape: {X_seq.shape}")
     print(f"yseq shape: {y_seq.shape}")
-    print("Label counts:")
+
+    print("\nLabel counts:")
     print(meta_seq_df["label_name"].value_counts())
 
     print(f"\nRemoved by Error_LOG_Sheet: {removed_by_error_log}")
@@ -617,7 +522,7 @@ def main():
     parser.add_argument("--stride", type=int, default=10)
     args = parser.parse_args()
 
-    build_wide_and_sequence_dataset(
+    build_sequence_30x280_dataset(
         raw_dir=Path(args.raw_dir),
         work_dir=Path(args.work_dir),
         out_dir=Path(args.out_dir),
