@@ -13,8 +13,6 @@ models/*
 
 *.zip
 *.rar
-*.npy
-*.joblib
 *.pkl
 *.h5
 *.keras
