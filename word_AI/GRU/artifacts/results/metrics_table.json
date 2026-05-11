@@ -1,0 +1,35 @@
+{
+  "table_row": {
+    "입력 구조": "30F × 411D",
+    "모델": "GRU Baseline",
+    "Accuracy": 0.6871,
+    "Macro F1": 0.6664,
+    "Weighted F1": 0.6665,
+    "Top-1 Accuracy": 0.6871,
+    "Strong Precision": 0.6,
+    "Strong Recall": 1.0,
+    "Strong F1": 0.75,
+    "판단": "정확도 보완 필요 (과적합 의심)"
+  },
+  "latency_ms": 35.29636549996212,
+  "top_confusions": [
+    {
+      "true_idx": 189,
+      "pred_idx": 2194,
+      "true_label": "WORD0190",
+      "pred_label": "WORD2195",
+      "count": 4
+    },
+    {
+      "true_idx": 201,
+      "pred_idx": 2063,
+      "true_label": "WORD0202",
+      "pred_label": "WORD2064",
+      "count": 4
+    }
+  ],
+  "validation_size": 9600,
+  "num_classes": 3000,
+  "model_path": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\99. 깃헙 코드 -sign_language\\word_AI\\GRU\\artifacts\\models\\best_model.keras",
+  "data_dir": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\전처리 완료 데이터(단어)"
+}

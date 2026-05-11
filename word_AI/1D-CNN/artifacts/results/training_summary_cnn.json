@@ -1,0 +1,16 @@
+{
+  "model": "1D-CNN Baseline",
+  "data_dir": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\전처리 완료 데이터(단어)",
+  "seq_len": 30,
+  "feature_dim": 126,
+  "num_classes": 3000,
+  "train_size": 38400,
+  "val_size": 9600,
+  "best_model_path": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\99. 깃헙 코드 -sign_language\\word_AI\\1D-CNN\\artifacts\\models\\best_cnn_model.keras",
+  "final_model_path": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\99. 깃헙 코드 -sign_language\\word_AI\\1D-CNN\\artifacts\\models\\final_cnn_model.keras",
+  "batch_size": 256,
+  "epochs": 80,
+  "seed": 42,
+  "feature_indices": null,
+  "max_samples": null
+}
