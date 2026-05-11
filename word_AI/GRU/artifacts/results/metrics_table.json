@@ -8,10 +8,9 @@
     "Top-1 Accuracy": 0.6871,
     "Strong Precision": 0.6,
     "Strong Recall": 1.0,
-    "Strong F1": 0.75,
-    "판단": "정확도 보완 필요 (과적합 의심)"
+    "Strong F1": 0.75
   },
-  "latency_ms": 35.29636549996212,
+  "latency_ms": 38.789504499873146,
   "top_confusions": [
     {
       "true_idx": 189,

@@ -105,7 +105,7 @@
   ],
   "latency": {
     "repeats": 200,
-    "average_latency_ms": 35.29636549996212,
+    "average_latency_ms": 38.789504499873146,
     "pass_40ms_target": true
   },
   "process_memory_mb": NaN,
