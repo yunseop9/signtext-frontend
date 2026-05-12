@@ -14,20 +14,20 @@
     "spec": "30F × 216D (Baseline 216D)"
   },
   "one_sample_overconfidence": {
-    "max_probability": 0.10189966857433319,
-    "top_probability": 0.10189966857433319,
+    "max_probability": 0.13566049933433533,
+    "top_probability": 0.13566049933433533,
     "prediction_label": "Unknown",
     "over_confidence": false,
     "threshold": 0.7,
-    "top_class": 980
+    "top_class": 368
   },
   "cpu_latency_benchmark": {
     "repeats": 200,
-    "average_latency_ms": 37.445361000004596,
-    "min_latency_ms": 34.22769999997399,
-    "max_latency_ms": 130.8481999999458,
-    "p50_latency_ms": 36.48449999991499,
-    "p99_latency_ms": 46.675189999841635,
+    "average_latency_ms": 37.80768199996601,
+    "min_latency_ms": 35.19640000013169,
+    "max_latency_ms": 113.216900000225,
+    "p50_latency_ms": 37.151149999772315,
+    "p99_latency_ms": 42.687798999895655,
     "target_latency_ms": 30.0,
     "pass_target": false,
     "note": "126D input should meet 30ms target (improved from 216D baseline)"
@@ -35,11 +35,11 @@
   "gpu_latency_benchmark": null,
   "p99_latency_benchmark": {
     "repeats": 1000,
-    "average_latency_ms": 38.808987300001256,
-    "min_latency_ms": 33.77509999972972,
-    "max_latency_ms": 80.79390000011699,
-    "p50_latency_ms": 37.7736499999628,
-    "p99_latency_ms": 58.086020999862725,
+    "average_latency_ms": 38.94273989998419,
+    "min_latency_ms": 35.48990000035701,
+    "max_latency_ms": 86.00879999994504,
+    "p50_latency_ms": 37.93554999947446,
+    "p99_latency_ms": 57.76226599986329,
     "target_latency_ms": 30.0,
     "pass_target": false,
     "note": "126D input should meet 30ms target (improved from 216D baseline)"
@@ -48,37 +48,37 @@
     {
       "order": 1,
       "sample_index": 0,
-      "pred_idx": 980,
-      "pred_label": "WORD0981",
-      "confidence": 0.10189966857433319
+      "pred_idx": 368,
+      "pred_label": "WORD0369",
+      "confidence": 0.13566094636917114
     },
     {
       "order": 2,
       "sample_index": 11999,
       "pred_idx": 2999,
       "pred_label": "WORD3000",
-      "confidence": 0.3666228652000427
+      "confidence": 0.43761515617370605
     },
     {
       "order": 3,
       "sample_index": 23999,
-      "pred_idx": 149,
-      "pred_label": "WORD0150",
-      "confidence": 0.11801499873399734
+      "pred_idx": 2999,
+      "pred_label": "WORD3000",
+      "confidence": 0.3268446624279022
     },
     {
       "order": 4,
       "sample_index": 35999,
-      "pred_idx": 2572,
-      "pred_label": "WORD2573",
-      "confidence": 0.09048601239919662
+      "pred_idx": 372,
+      "pred_label": "WORD0373",
+      "confidence": 0.0872226282954216
     },
     {
       "order": 5,
       "sample_index": 47999,
-      "pred_idx": 300,
-      "pred_label": "WORD0301",
-      "confidence": 0.1413031667470932
+      "pred_idx": 2999,
+      "pred_label": "WORD3000",
+      "confidence": 0.3048512935638428
     }
   ]
 }
