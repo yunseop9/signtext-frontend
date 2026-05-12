@@ -1,0 +1,5 @@
+[Hybrid Model 자체 성능 리포트]
+     입력 구조                 모델명  Accuracy  Macro F1  Weighted F1  Avg Latency(ms)
+30F x 134D Hybrid (1D-CNN+GRU)     0.322     0.294       0.2935            64.43
+
+Validation Samples: 9600

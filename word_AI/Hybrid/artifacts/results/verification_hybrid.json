@@ -1,0 +1,10 @@
+{
+  "model_name": "Hybrid_1DCNN_GRU",
+  "input_shape": [
+    30,
+    134
+  ],
+  "device": "CPU",
+  "average_latency_ms": 64.42664833334372,
+  "meets_40ms_target": false
+}
