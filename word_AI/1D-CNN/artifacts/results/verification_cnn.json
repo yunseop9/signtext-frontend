@@ -23,11 +23,11 @@
   },
   "cpu_latency_benchmark": {
     "repeats": 200,
-    "average_latency_ms": 36.24220000230707,
-    "min_latency_ms": 34.13280000677332,
-    "max_latency_ms": 46.77519999677315,
-    "p50_latency_ms": 36.00490000098944,
-    "p99_latency_ms": 40.657961996621395,
+    "average_latency_ms": 37.445361000004596,
+    "min_latency_ms": 34.22769999997399,
+    "max_latency_ms": 130.8481999999458,
+    "p50_latency_ms": 36.48449999991499,
+    "p99_latency_ms": 46.675189999841635,
     "target_latency_ms": 30.0,
     "pass_target": false,
     "note": "126D input should meet 30ms target (improved from 216D baseline)"
@@ -35,11 +35,11 @@
   "gpu_latency_benchmark": null,
   "p99_latency_benchmark": {
     "repeats": 1000,
-    "average_latency_ms": 36.62918489979347,
-    "min_latency_ms": 33.442200045101345,
-    "max_latency_ms": 52.27879999438301,
-    "p50_latency_ms": 36.394900002051145,
-    "p99_latency_ms": 43.82428203069139,
+    "average_latency_ms": 38.808987300001256,
+    "min_latency_ms": 33.77509999972972,
+    "max_latency_ms": 80.79390000011699,
+    "p50_latency_ms": 37.7736499999628,
+    "p99_latency_ms": 58.086020999862725,
     "target_latency_ms": 30.0,
     "pass_target": false,
     "note": "126D input should meet 30ms target (improved from 216D baseline)"

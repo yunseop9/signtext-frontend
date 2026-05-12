@@ -135,7 +135,56 @@ def compute_class_weight(y_train: np.ndarray, power: float = 0.5) -> dict[int, f
     return {int(c): float(w) for c, w in zip(classes, inv)}
 
 
-def build_cnn_model(
+# def build_cnn_model(
+#     input_shape: tuple[int, int],
+#     num_classes: int,
+#     loss_mode: LossMode = "sparse",
+#     focal_gamma: float = 2.0,
+#     focal_alpha: float = 0.25,
+#     label_smoothing: float = 0.0,
+# ):
+#     tf = ensure_tensorflow()
+
+#     inputs = tf.keras.Input(shape=input_shape, name="word_sequence")
+
+#     x = tf.keras.layers.Conv1D(64, 3, padding="same", name="conv1")(inputs)
+#     x = tf.keras.layers.BatchNormalization(name="bn1")(x)
+#     x = tf.keras.layers.ReLU(name="relu1")(x)
+#     x = tf.keras.layers.MaxPooling1D(pool_size=2, name="pool1")(x)
+
+#     x = tf.keras.layers.Conv1D(128, 3, padding="same", name="conv2")(x)
+#     x = tf.keras.layers.BatchNormalization(name="bn2")(x)
+#     x = tf.keras.layers.ReLU(name="relu2")(x)
+#     x = tf.keras.layers.GlobalAveragePooling1D(name="gap")(x)
+
+#     x = tf.keras.layers.Dense(
+#         64,
+#         activation="relu",
+#         kernel_regularizer=tf.keras.regularizers.l2(1e-4),
+#         name="dense1",
+#     )(x)
+#     x = tf.keras.layers.Dropout(0.5, name="dropout1")(x)
+#     outputs = tf.keras.layers.Dense(num_classes, activation="softmax", name="classifier")(x)
+
+#     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="word_1dcnn_classifier")
+#     loss_obj = build_loss(
+#         loss_mode=loss_mode,
+#         focal_gamma=focal_gamma,
+#         focal_alpha=focal_alpha,
+#         label_smoothing=label_smoothing,
+#     )
+#     model.compile(
+#         optimizer=tf.keras.optimizers.Adam(learning_rate=CNN_LR),
+#         loss=loss_obj,
+#         metrics=[
+#             tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
+#             tf.keras.metrics.SparseTopKCategoricalAccuracy(k=5, name="top5_accuracy"),
+#         ],
+#     )
+#     return model
+
+
+def build_cnn_model( # 기존 함수명을 그대로 쓰거나 v2로 교체하세요
     input_shape: tuple[int, int],
     num_classes: int,
     loss_mode: LossMode = "sparse",
@@ -144,29 +193,30 @@ def build_cnn_model(
     label_smoothing: float = 0.0,
 ):
     tf = ensure_tensorflow()
-
     inputs = tf.keras.Input(shape=input_shape, name="word_sequence")
 
-    x = tf.keras.layers.Conv1D(64, 3, padding="same", name="conv1")(inputs)
-    x = tf.keras.layers.BatchNormalization(name="bn1")(x)
-    x = tf.keras.layers.ReLU(name="relu1")(x)
-    x = tf.keras.layers.MaxPooling1D(pool_size=2, name="pool1")(x)
-
-    x = tf.keras.layers.Conv1D(128, 3, padding="same", name="conv2")(x)
-    x = tf.keras.layers.BatchNormalization(name="bn2")(x)
-    x = tf.keras.layers.ReLU(name="relu2")(x)
-    x = tf.keras.layers.GlobalAveragePooling1D(name="gap")(x)
-
-    x = tf.keras.layers.Dense(
-        64,
-        activation="relu",
-        kernel_regularizer=tf.keras.regularizers.l2(1e-4),
-        name="dense1",
-    )(x)
-    x = tf.keras.layers.Dropout(0.5, name="dropout1")(x)
+    # 1. Multi-scale Feature Extraction (병렬 커널)
+    branch1 = tf.keras.layers.Conv1D(64, 3, padding="same", activation='relu', name="b1")(inputs)
+    branch2 = tf.keras.layers.Conv1D(64, 5, padding="same", activation='relu', name="b2")(inputs)
+    branch3 = tf.keras.layers.Conv1D(64, 7, padding="same", activation='relu', name="b3")(inputs)
+    x = tf.keras.layers.Concatenate(name="concat")([branch1, branch2, branch3])
+    x = tf.keras.layers.BatchNormalization(name="bn_init")(x)
+    
+    # 2. Deeper Residual Block (잔차 연결)
+    res = tf.keras.layers.Conv1D(192, 1, padding="same", name="res_shortcut")(x) 
+    x = tf.keras.layers.Conv1D(192, 3, padding="same", activation='relu', name="conv_deep")(x)
+    x = tf.keras.layers.Add(name="residual_add")([x, res]) 
+    x = tf.keras.layers.MaxPooling1D(2, name="pool_v2")(x)
+    
+    # 3. Dense Classifier (용량 확장)
+    x = tf.keras.layers.Flatten(name="flatten_v2")(x) 
+    x = tf.keras.layers.Dense(256, activation="relu", name="dense_v2")(x)
+    x = tf.keras.layers.Dropout(0.3, name="dropout_v2")(x) # Dropout 0.5 -> 0.3 하향
     outputs = tf.keras.layers.Dense(num_classes, activation="softmax", name="classifier")(x)
 
-    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="word_1dcnn_classifier")
+    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="word_1dcnn_v2")
+    
+    # 손실 함수 및 컴파일 로직 (기존과 동일하게 유지)
     loss_obj = build_loss(
         loss_mode=loss_mode,
         focal_gamma=focal_gamma,
