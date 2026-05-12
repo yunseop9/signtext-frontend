@@ -11,6 +11,7 @@ from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd  
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -133,55 +134,6 @@ def compute_class_weight(y_train: np.ndarray, power: float = 0.5) -> dict[int, f
     inv = 1.0 / np.power(counts.astype(np.float64), power)
     inv = inv / np.mean(inv)
     return {int(c): float(w) for c, w in zip(classes, inv)}
-
-
-# def build_cnn_model(
-#     input_shape: tuple[int, int],
-#     num_classes: int,
-#     loss_mode: LossMode = "sparse",
-#     focal_gamma: float = 2.0,
-#     focal_alpha: float = 0.25,
-#     label_smoothing: float = 0.0,
-# ):
-#     tf = ensure_tensorflow()
-
-#     inputs = tf.keras.Input(shape=input_shape, name="word_sequence")
-
-#     x = tf.keras.layers.Conv1D(64, 3, padding="same", name="conv1")(inputs)
-#     x = tf.keras.layers.BatchNormalization(name="bn1")(x)
-#     x = tf.keras.layers.ReLU(name="relu1")(x)
-#     x = tf.keras.layers.MaxPooling1D(pool_size=2, name="pool1")(x)
-
-#     x = tf.keras.layers.Conv1D(128, 3, padding="same", name="conv2")(x)
-#     x = tf.keras.layers.BatchNormalization(name="bn2")(x)
-#     x = tf.keras.layers.ReLU(name="relu2")(x)
-#     x = tf.keras.layers.GlobalAveragePooling1D(name="gap")(x)
-
-#     x = tf.keras.layers.Dense(
-#         64,
-#         activation="relu",
-#         kernel_regularizer=tf.keras.regularizers.l2(1e-4),
-#         name="dense1",
-#     )(x)
-#     x = tf.keras.layers.Dropout(0.5, name="dropout1")(x)
-#     outputs = tf.keras.layers.Dense(num_classes, activation="softmax", name="classifier")(x)
-
-#     model = tf.keras.Model(inputs=inputs, outputs=outputs, name="word_1dcnn_classifier")
-#     loss_obj = build_loss(
-#         loss_mode=loss_mode,
-#         focal_gamma=focal_gamma,
-#         focal_alpha=focal_alpha,
-#         label_smoothing=label_smoothing,
-#     )
-#     model.compile(
-#         optimizer=tf.keras.optimizers.Adam(learning_rate=CNN_LR),
-#         loss=loss_obj,
-#         metrics=[
-#             tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
-#             tf.keras.metrics.SparseTopKCategoricalAccuracy(k=5, name="top5_accuracy"),
-#         ],
-#     )
-#     return model
 
 
 def build_cnn_model( # 기존 함수명을 그대로 쓰거나 v2로 교체하세요
@@ -433,6 +385,7 @@ def train_cnn(
     print(f"Final model : {final_model_path}")
     print(f"History plot: {result_dir / 'training_history_cnn.png'}")
     print(f"Summary     : {result_dir / 'training_summary_cnn.json'}")
+
 
 
 def parse_feature_indices(raw: str | None) -> list[int] | None:

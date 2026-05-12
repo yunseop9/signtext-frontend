@@ -173,8 +173,16 @@ def verify_cnn(data_dir: Path, model_path: Path, seed: int = CNN_SEED) -> dict[s
     elif feature_dim == 216:
         # Use first 216 features for baseline
         feature_indices = np.arange(216, dtype=np.int32)
+    elif feature_dim == 144:
+        # [신규 추가] 216D Baseline에서 신뢰도(c)를 제거한 버전 (72 landmarks * 2)
+        feature_indices = np.array([i for i in range(216) if (i + 1) % 3 != 0], dtype=np.int32)
+        print(f"INFO: Detected Refined Baseline Model (144D). Slicing x,y only.")
+    elif feature_dim == 134:
+        # [신규 추가] 201D Body+Hands에서 신뢰도(c)를 제거한 버전 (67 landmarks * 2)
+        feature_indices = np.array([i for i in range(201) if (i + 1) % 3 != 0], dtype=np.int32)
+        print(f"INFO: Detected Refined Body+Hands Model (134D). Slicing x,y only.")
     else:
-        raise ValueError(f"Unsupported feature dimension: {feature_dim}. Expected 126 or 216.")
+        raise ValueError(f"Unsupported feature dimension: {feature_dim}. Expected 126, 144, 134, or 216.")
     
     bundle = load_cnn_dataset(data_dir, feature_indices=feature_indices)
     X = bundle.X

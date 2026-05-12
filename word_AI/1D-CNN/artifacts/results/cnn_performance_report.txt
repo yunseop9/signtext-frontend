@@ -4,4 +4,4 @@
 
 Validation samples: 9600
 Classes: 3000
-Average latency(ms): 46.08
+Average latency(ms): 37.50

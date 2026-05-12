@@ -10,6 +10,6 @@
   "num_classes": 3000,
   "model_path": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\99. 깃헙 코드 -sign_language\\word_AI\\1D-CNN\\artifacts\\models\\best_cnn_model.keras",
   "data_dir": "C:\\선문대학교\\강의\\3학년\\1학기\\전공\\SW프로젝트기초\\4. 팀플\\9주차\\전처리 완료 데이터(단어)",
-  "latency_ms": 46.08283042907715,
+  "latency_ms": 37.50083923339844,
   "seed": 42
 }
