@@ -1,0 +1,34 @@
+{
+  "num_manual_rows": 100,
+  "num_summary_rows": 100,
+  "num_merged_rows": 100,
+  "num_valid_eval_rows": 100,
+  "num_missing_prediction_rows": 0,
+  "num_missing_manual_rows": 0,
+  "num_duplicate_sequence_names_manual": 0,
+  "num_duplicate_sequence_names_summary": 0,
+  "accuracy": 0.53,
+  "macro_f1": 0.27023563048407767,
+  "weighted_f1": 0.4347116237799467,
+  "correct_count": 53,
+  "wrong_count": 47,
+  "label_order": [
+    "weak",
+    "normal",
+    "strong"
+  ],
+  "manual_label_counts": {
+    "weak": 36,
+    "normal": 57,
+    "strong": 7
+  },
+  "pred_label_counts": {
+    "weak": 10,
+    "normal": 90,
+    "strong": 0
+  },
+  "summary_degree_counts_all100": {
+    "normal": 90,
+    "weak": 10
+  }
+}

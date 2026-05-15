@@ -1,0 +1,62 @@
+Manual Degree Full 100 Evaluation Report
+============================================================
+
+Manual CSV rows: 100
+Degree summary rows: 100
+Merged rows: 100
+Valid evaluation rows: 100
+Missing manual rows: 0
+Missing prediction rows: 0
+Duplicate sequence_name in manual: 0
+Duplicate sequence_name in summary: 0
+
+Overall metrics
+------------------------------------------------------------
+Accuracy    : 0.5300
+Macro F1    : 0.2702
+Weighted F1 : 0.4347
+Correct     : 53
+Wrong       : 47
+
+Manual label counts
+manual_degree_norm
+weak      36
+normal    57
+strong     7
+Name: count, dtype: int64
+
+Prediction label counts
+pred_degree_norm
+weak      10
+normal    90
+strong     0
+Name: count, dtype: int64
+
+Confusion Matrix
+Rows = manual label, Columns = predicted label
+        weak  normal  strong
+weak       3      33       0
+normal     7      50       0
+strong     0       7       0
+
+Classification report
+              precision    recall  f1-score   support
+
+    weak(약함)       0.30      0.08      0.13        36
+  normal(보통)       0.56      0.88      0.68        57
+  strong(강함)       0.00      0.00      0.00         7
+
+    accuracy                           0.53       100
+   macro avg       0.29      0.32      0.27       100
+weighted avg       0.42      0.53      0.43       100
+
+
+Assignee summary
+assignee  samples  correct  accuracy
+bongheon       50       35      0.70
+seungbin       50       18      0.36
+
+Key interpretation
+- The model predicts normal very frequently; strong is not predicted in this matched100 run.
+- Strong manual labels therefore have recall 0.0 in the current evaluation.
+- This result is suitable for a limitation section: DISFA-trained degree_AI has domain gap when applied to AIHub sign-language videos.
