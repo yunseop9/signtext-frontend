@@ -15,10 +15,8 @@ degree_AI/outputs/*
 
 *.npy
 *.npz
-*.joblib
 *.pkl
 *.h5
-*.keras
 *.pt
 *.pth
 *.onnx
