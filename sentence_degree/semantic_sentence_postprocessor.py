@@ -8,10 +8,29 @@ from typing import Dict, Any
 
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen2.5:7b"
+OLLAMA_MODEL = "qwen2.5:3b"
 
 BASE_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = BASE_DIR / "sentence_degree_prompt.txt"
+
+
+EMOTION_STATE_TERMS = [
+    "화났다", "화나다",
+    "슬프다",
+    "무섭다",
+    "행복하다",
+    "기쁘다",
+    "아프다",
+    "피곤하다",
+    "걱정된다",
+    "불안하다",
+    "좋다",
+    "싫다",
+    "힘들다",
+    "우울하다",
+    "짜증난다",
+    "놀랐다",
+]
 
 
 def load_prompt_template() -> str:
@@ -22,7 +41,12 @@ def load_prompt_template() -> str:
 
 def build_prompt(text: str, degree: str, degree_ko: str) -> str:
     template = load_prompt_template()
-    return template.replace("{text}", text).replace("{degree}", degree).replace("{degree_ko}", degree_ko)
+    return (
+        template
+        .replace("{text}", text)
+        .replace("{degree}", degree)
+        .replace("{degree_ko}", degree_ko)
+    )
 
 
 def extract_json(response_text: str) -> Dict[str, Any]:
@@ -73,6 +97,87 @@ def fallback_sentence_degree(text: str, degree: str, reason: str) -> Dict[str, A
         "reason": reason,
         "source": "fallback"
     }
+
+
+def safe_rule_sentence_degree(text: str, degree: str, reason: str) -> Dict[str, Any]:
+    """
+    LLM이 원문을 바꾸거나 일반 행동문을 잘못 수정할 경우 사용하는 안전 규칙.
+    원문 의미를 바꾸지 않고, 감정/상태 표현에만 '조금/매우'를 삽입한다.
+    """
+    if degree == "strong":
+        modifier = "매우"
+    elif degree == "weak":
+        modifier = "조금"
+    else:
+        return {
+            "apply_degree": False,
+            "final_text": text,
+            "target_expression": "",
+            "modifier": "",
+            "reason": "degree가 normal이므로 원문 유지",
+            "source": "rule_guard",
+        }
+
+    # 긴 표현부터 먼저 처리
+    for term in sorted(EMOTION_STATE_TERMS, key=len, reverse=True):
+        if term in text:
+            final_text = text.replace(term, f"{modifier} {term}", 1)
+            return {
+                "apply_degree": True,
+                "final_text": final_text,
+                "target_expression": term,
+                "modifier": modifier,
+                "reason": reason,
+                "source": "rule_guard",
+            }
+
+    return {
+        "apply_degree": False,
+        "final_text": text,
+        "target_expression": "",
+        "modifier": "",
+        "reason": "감정/상태 표현이 아니므로 원문 유지",
+        "source": "rule_guard",
+    }
+
+
+def is_safe_llm_result(result: Dict[str, Any], original_text: str, degree: str) -> bool:
+    """
+    LLM 결과가 원문을 훼손하지 않았는지 검사한다.
+    허용되는 수정은 원문 안의 감정/상태 표현 앞에 '조금/매우'를 삽입하는 것뿐이다.
+    """
+    final_text = str(result.get("final_text", "")).strip()
+    apply_degree = result.get("apply_degree", False)
+    target_expression = str(result.get("target_expression", "")).strip()
+    modifier = str(result.get("modifier", "")).strip()
+
+    if not final_text:
+        return False
+
+    if degree == "normal":
+        return final_text == original_text
+
+    if not apply_degree:
+        return final_text == original_text
+
+    expected_modifier = "매우" if degree == "strong" else "조금"
+
+    if modifier != expected_modifier:
+        return False
+
+    if target_expression not in original_text:
+        return False
+
+    if target_expression not in EMOTION_STATE_TERMS:
+        return False
+
+    # final_text에서 modifier 하나를 제거했을 때 원문과 같아야 함
+    restored = final_text.replace(f"{expected_modifier} ", "", 1).strip()
+
+    if restored != original_text:
+        return False
+
+    return True
 
 
 def validate_llm_result(result: Dict[str, Any], original_text: str, degree: str) -> Dict[str, Any]:
@@ -126,7 +231,11 @@ def semantic_sentence_postprocess(
         }
 
     if not use_llm:
-        return fallback_sentence_degree(text, degree, "LLM disabled")
+        return safe_rule_sentence_degree(
+            text=text,
+            degree=degree,
+            reason="LLM disabled, rule based processing"
+        )
 
     start_time = time.time()
 
@@ -136,15 +245,36 @@ def semantic_sentence_postprocess(
         parsed = extract_json(raw_response)
         validated = validate_llm_result(parsed, text, degree)
 
+        if not is_safe_llm_result(validated, text, degree):
+            guarded = safe_rule_sentence_degree(
+                text=text,
+                degree=degree,
+                reason="LLM 결과가 원문을 변경하거나 일반 행동문을 수정하여 안전 규칙으로 보정함"
+            )
+            guarded["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+            return guarded
+
         validated["source"] = "ollama"
         validated["latency_ms"] = round((time.time() - start_time) * 1000, 2)
         return validated
 
     except (urllib.error.URLError, TimeoutError) as e:
-        return fallback_sentence_degree(text, degree, f"Ollama connection failed: {e}")
+        guarded = safe_rule_sentence_degree(
+            text=text,
+            degree=degree,
+            reason=f"Ollama connection failed, rule based fallback: {e}"
+        )
+        guarded["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+        return guarded
 
     except Exception as e:
-        return fallback_sentence_degree(text, degree, f"LLM response error: {e}")
+        guarded = safe_rule_sentence_degree(
+            text=text,
+            degree=degree,
+            reason=f"LLM response error, rule based fallback: {e}"
+        )
+        guarded["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+        return guarded
 
 
 def build_backend_response(sentence_result: Dict[str, Any], degree_result: Dict[str, Any]) -> Dict[str, Any]:

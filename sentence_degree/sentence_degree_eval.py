@@ -97,6 +97,7 @@ def main():
     ollama_count = source_counts.get("ollama", 0)
     fallback_count = source_counts.get("fallback", 0)
     rule_count = source_counts.get("rule", 0)
+    rule_guard_count = source_counts.get("rule_guard", 0)
 
     latency_values = []
     for r in rows:
@@ -108,9 +109,10 @@ def main():
                 pass
 
     postprocess_accuracy = pass_count / total
-    ollama_success_rate = ollama_count / total
+    ollama_final_accept_rate = ollama_count / total
     fallback_rate = fallback_count / total
     rule_rate = rule_count / total
+    rule_guard_rate = rule_guard_count / total
     avg_latency_ms = mean(latency_values) if latency_values else 0.0
 
     fieldnames = list(rows[0].keys())
@@ -131,7 +133,8 @@ def main():
         "pass": pass_count,
         "fail": fail_count,
         "postprocess_accuracy": round(postprocess_accuracy, 4),
-        "ollama_success_rate": round(ollama_success_rate, 4),
+        "ollama_final_accept_rate": round(ollama_final_accept_rate, 4),
+        "rule_guard_rate": round(rule_guard_rate, 4),
         "fallback_rate": round(fallback_rate, 4),
         "rule_rate": round(rule_rate, 4),
         "avg_latency_ms": round(avg_latency_ms, 2),
@@ -150,7 +153,8 @@ PASS: {pass_count}
 FAIL: {fail_count}
 
 후처리 정확도: {postprocess_accuracy:.4f}
-Ollama 응답 성공률: {ollama_success_rate:.4f}
+Ollama 최종 채택률: {ollama_final_accept_rate:.4f}
+Rule Guard 안전 보정률: {rule_guard_rate:.4f}
 Fallback 사용률: {fallback_rate:.4f}
 Rule 처리율: {rule_rate:.4f}
 평균 지연시간(ms): {avg_latency_ms:.2f}
