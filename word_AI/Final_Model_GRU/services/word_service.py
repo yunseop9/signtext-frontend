@@ -22,8 +22,9 @@ class GRUWordInference:
         
         self.seq_len = seq_len
         self.threshold = threshold
+        self.expected_input_dim = 411
         self.frame_buffer = []
-        print(f"✅ 준비 완료! (임계값: {threshold}, 입력규격: {seq_len}F x 126D)")
+        print(f"✅ 준비 완료! (임계값: {threshold}, 입력규격: {seq_len}F x 411D -> 126D)")
 
     def clear_buffer(self):
         """사용자 변경이나 영상 종료 시 버퍼 비우기"""
@@ -37,34 +38,26 @@ class GRUWordInference:
             "threshold": self.threshold
         }
 
-    def _extract_hands_126d(self, full_landmarks):
-        if full_landmarks is None or len(full_landmarks) < 201:
+    def _extract_input_126d(self, full_landmarks):
+        if full_landmarks is None:
             return None
-        return full_landmarks[75:201]
 
-    def _normalize_shoulder(self, landmarks_126d, pose_landmarks):
-        """어깨 기준 정규화 (안정성 및 리턴 타입 일관성 강화)"""
-        l_sh = pose_landmarks[11]
-        r_sh = pose_landmarks[12]
-        
-        shoulder_center = (l_sh[:2] + r_sh[:2]) / 2
-        shoulder_dist = np.linalg.norm(l_sh[:2] - r_sh[:2]) + 1e-6
-        
-        # [피드백 반영] return 타입 일관성 유지 (flattened numpy array)
-        if shoulder_dist < 1e-3:
-            return np.array(landmarks_126d).flatten()
-            
-        reshaped = landmarks_126d.reshape(-1, 3)
-        reshaped[:, :2] = (reshaped[:, :2] - shoulder_center) / shoulder_dist
-        return reshaped.flatten()
+        full_landmarks = np.asarray(full_landmarks, dtype=np.float32).flatten()
+        if full_landmarks.size != self.expected_input_dim:
+            return None
+
+        # `full_landmarks`는 이미 run_word_level_eval.py / process_realtime()에서
+        # extract_frame_feature()로 전처리된 411D 벡터입니다.
+        # 따라서 GRU 입력은 추가 정규화 없이 손 구간(75:201)만 슬라이스해야 합니다.
+        hands_126d = full_landmarks[75:201]
+        if hands_126d.size != 126:
+            return None
+        return hands_126d
 
     def add_frame(self, full_landmarks):
-        hands_data = self._extract_hands_126d(full_landmarks)
-        if hands_data is None:
+        processed_frame = self._extract_input_126d(full_landmarks)
+        if processed_frame is None:
             return False
-            
-        pose_data = full_landmarks[0:75].reshape(-1, 3)
-        processed_frame = self._normalize_shoulder(hands_data, pose_data)
         
         self.frame_buffer.append(processed_frame)
         if len(self.frame_buffer) > self.seq_len:
