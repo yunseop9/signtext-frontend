@@ -16,31 +16,40 @@ export function MediaWorkspace({
   videoRef,
   cameraStatus,
   cameraError,
-  onCameraRetry,
   selectedFile,
   previewUrl,
+  uploadVideoRef,
+  uploadPlayRequestId,
   onFileChange,
   onUploadStart,
-  isAnalyzing,
+  onUploadStop,
+  onUploadEnded,
 }) {
   const isUpload = inputMode === INPUT_MODES.UPLOAD;
-  const uploadDisabled = status === ANALYSIS_STATUS.LOADING || isAnalyzing;
+  const showMediaStatus = status !== ANALYSIS_STATUS.LLM_FALLBACK;
 
   return (
     <section className="media-workspace" aria-label="수어 입력 영역">
       <div className="media-surface">
         <KeypointOverlay keypoints={keypoints} />
-        <div className="media-status">
-          <StatusBadge status={status} />
-        </div>
+        {showMediaStatus && (
+          <div className="media-status">
+            <StatusBadge status={status} />
+          </div>
+        )}
         {isUpload ? (
-          <UploadPreview previewUrl={previewUrl} file={selectedFile} />
+          <UploadPreview
+            previewUrl={previewUrl}
+            file={selectedFile}
+            videoRef={uploadVideoRef}
+            playRequestId={uploadPlayRequestId}
+            onEnded={onUploadEnded}
+          />
         ) : (
           <WebcamPreview
             videoRef={videoRef}
             cameraStatus={cameraStatus}
             cameraError={cameraError}
-            onRetry={onCameraRetry}
             status={status}
           />
         )}
@@ -59,7 +68,8 @@ export function MediaWorkspace({
             inputMode={inputMode}
             status={status}
             onUploadStart={onUploadStart}
-            disabled={uploadDisabled}
+            onUploadStop={onUploadStop}
+            disabled={false}
           />
         </div>
       </div>

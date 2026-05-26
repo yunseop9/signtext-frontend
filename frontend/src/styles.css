@@ -139,7 +139,9 @@ button {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  inset: 0;
   justify-content: center;
+  position: absolute;
 }
 
 .person-mark {
@@ -169,16 +171,15 @@ button {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  left: 50%;
   line-height: 1.6;
   max-width: 330px;
+  position: absolute;
   text-align: center;
-}
-
-.permission-panel button {
-  background: #26344e;
-  color: #fff;
-  font-weight: 800;
-  padding: 12px 24px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(330px, calc(100% - 48px));
+  z-index: 3;
 }
 
 .keypoint-overlay {
@@ -343,13 +344,14 @@ button {
 
 .file-name {
   background: rgba(0, 0, 0, 0.58);
-  bottom: 18px;
+  bottom: 68px;
   color: #fff;
   font-weight: 800;
   left: 18px;
   max-width: calc(100% - 36px);
   overflow: hidden;
   padding: 8px 12px;
+  pointer-events: none;
   position: absolute;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -409,6 +411,17 @@ button {
 .result-main {
   text-align: center;
   width: 100%;
+}
+
+.fallback-badge {
+  background: #f1f0ff;
+  border-radius: 999px;
+  color: #5146e8;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0 auto 18px;
+  padding: 6px 12px;
 }
 
 .result-main h2 {

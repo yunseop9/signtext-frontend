@@ -8,7 +8,7 @@ const HISTORY = [
 
 export function createMockAnalysisResult(outputMode, source = "webcam") {
   const fallback = outputMode === OUTPUT_MODES.SENTENCE_DEGREE;
-  const text = fallback ? "지금 몸이 너무 아파서 빨리 도와주세요." : "안녕하세요.";
+  const text = fallback ? "지금 몸이 너무 아파서 빨리 도와주세요." : "안녕하세요";
 
   return {
     status: "success",
@@ -27,7 +27,7 @@ export function createMockAnalysisResult(outputMode, source = "webcam") {
     keypoints: {
       hands: true,
       face: true,
-      pose: source === "upload" ? true : false,
+      pose: source === "upload",
     },
   };
 }

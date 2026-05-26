@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { MediaWorkspace } from "./components/MediaWorkspace";
 import { ResultPanel } from "./components/ResultPanel";
@@ -14,6 +14,9 @@ export default function App() {
   const [inputMode, setInputMode] = useState(INPUT_MODES.WEBCAM);
   const [outputMode, setOutputMode] = useState(OUTPUT_MODES.SENTENCE_DEGREE);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadPlayRequestId, setUploadPlayRequestId] = useState(0);
+  const [isUploadVideoEnded, setIsUploadVideoEnded] = useState(false);
+  const uploadVideoRef = useRef(null);
 
   const {
     status,
@@ -72,14 +75,43 @@ export default function App() {
   const handleInputModeChange = useCallback((nextMode) => {
     setInputMode(nextMode);
     resetAnalysis(ANALYSIS_STATUS.IDLE);
+    setIsUploadVideoEnded(false);
     if (nextMode === INPUT_MODES.UPLOAD) {
       setSelectedFile(null);
     }
   }, [resetAnalysis]);
 
+  const handleFileChange = useCallback((file) => {
+    setSelectedFile(file);
+    setIsUploadVideoEnded(false);
+    resetAnalysis(ANALYSIS_STATUS.IDLE);
+  }, [resetAnalysis]);
+
   const handleUploadStart = useCallback(() => {
+    setIsUploadVideoEnded(false);
+    setUploadPlayRequestId((requestId) => requestId + 1);
+
+    if (uploadVideoRef.current) {
+      uploadVideoRef.current.currentTime = 0;
+      uploadVideoRef.current.play().catch(() => {});
+    }
+
     runUploadAnalysis(selectedFile, outputMode);
   }, [outputMode, runUploadAnalysis, selectedFile]);
+
+  const handleUploadStop = useCallback(() => {
+    if (uploadVideoRef.current) {
+      uploadVideoRef.current.pause();
+      uploadVideoRef.current.currentTime = 0;
+    }
+
+    setIsUploadVideoEnded(false);
+    resetAnalysis(ANALYSIS_STATUS.IDLE);
+  }, [resetAnalysis]);
+
+  const handleUploadEnded = useCallback(() => {
+    setIsUploadVideoEnded(true);
+  }, []);
 
   const handleAutoWebcamAnalysis = useCallback(() => {
     runWebcamAnalysis(outputMode);
@@ -110,11 +142,14 @@ export default function App() {
           videoRef={webcam.videoRef}
           cameraStatus={webcam.cameraStatus}
           cameraError={webcam.cameraError}
-          onCameraRetry={webcam.requestCamera}
           selectedFile={selectedFile}
           previewUrl={previewUrl}
-          onFileChange={setSelectedFile}
+          uploadVideoRef={uploadVideoRef}
+          uploadPlayRequestId={uploadPlayRequestId}
+          onFileChange={handleFileChange}
           onUploadStart={handleUploadStart}
+          onUploadStop={handleUploadStop}
+          onUploadEnded={handleUploadEnded}
           isAnalyzing={isAnalyzing}
         />
 
