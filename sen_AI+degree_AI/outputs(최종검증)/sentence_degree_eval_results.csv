@@ -1,0 +1,51 @@
+﻿sample_id,raw_text,expected_final_text,actual_final_text,pass,source
+NIA_SL_SEN0092_REAL04_F,가방,가방이 조금 부족해요.,조금 가방입니다.,False,rule
+NIA_SL_SEN0155_REAL02_F,단말기터치,단말기터치입니다.,단말기터치입니다.,True,rule
+NIA_SL_SEN0160_REAL09_F,핸드폰,핸드폰입니다.,핸드폰입니다.,True,rule
+NIA_SL_SEN0168_REAL10_F,1호,1호가 매우 중요해요.,매우 1호입니다.,False,rule
+NIA_SL_SEN0169_REAL08_F,서울농아인협회,서울농아인협회가 조금 부족해요.,조금 서울농아인협회입니다.,False,rule
+NIA_SL_SEN0179_REAL09_F,학교,학교가 매우 중요해요.,매우 학교입니다.,False,rule
+NIA_SL_SEN0204_REAL05_F,사진기,사진기입니다.,사진기입니다.,True,rule
+NIA_SL_SEN0256_REAL01_F,도착,도착입니다.,도착입니다.,True,rule
+NIA_SL_SEN0258_REAL15_F,계산,계산이 조금 부족해요.,조금 계산입니다.,False,rule
+NIA_SL_SEN0309_REAL01_F,아니다,아니다입니다.,아니다입니다.,True,rule
+NIA_SL_SEN0357_REAL11_F,시청,시청이 매우 중요해요.,매우 시청입니다.,False,rule
+NIA_SL_SEN0428_REAL10_F,여기,여기입니다.,여기입니다.,True,rule
+NIA_SL_SEN0441_REAL02_F,지하철,지하철이 조금 부족해요.,조금 지하철입니다.,False,rule
+NIA_SL_SEN0459_REAL02_F,카드,카드입니다.,카드입니다.,True,rule
+NIA_SL_SEN0477_REAL11_F,1호,1호입니다.,1호입니다.,True,rule
+NIA_SL_SEN0480_REAL02_F,여기,여기가 조금 부족해요.,조금 여기입니다.,False,rule
+NIA_SL_SEN0503_REAL11_F,영수증,영수증이 조금 부족해요.,조금 영수증입니다.,False,rule
+NIA_SL_SEN0510_REAL09_F,한국농아인협회,한국농아인협회가 조금 부족해요.,조금 한국농아인협회입니다.,False,rule
+NIA_SL_SEN0513_REAL09_F,에어컨,에어컨입니다.,에어컨입니다.,True,rule
+NIA_SL_SEN0527_REAL03_F,지금,지금이 조금 부족해요.,조금 지금입니다.,False,rule
+NIA_SL_SEN0545_REAL12_F,자판기,자판기입니다.,자판기입니다.,True,rule
+NIA_SL_SEN0547_REAL01_F,샛길,샛길입니다.,샛길입니다.,True,rule
+NIA_SL_SEN0554_REAL12_F,맥도날드,맥도날드입니다.,맥도날드입니다.,True,rule
+NIA_SL_SEN0588_REAL10_F,길,길이 매우 중요해요.,매우 길입니다.,False,rule
+NIA_SL_SEN0615_REAL01_F,유리,유리가 조금 부족해요.,조금 유리입니다.,False,rule
+NIA_SL_SEN0624_REAL05_F,에어컨,에어컨입니다.,에어컨입니다.,True,rule
+NIA_SL_SEN0708_REAL05_F,안경,안경입니다.,안경입니다.,True,rule
+NIA_SL_SEN0724_REAL16_F,서울대학교,서울대학교입니다.,서울대학교입니다.,True,rule
+NIA_SL_SEN0730_REAL08_F,대로,대로입니다.,대로입니다.,True,rule
+NIA_SL_SEN0758_REAL16_F,119,119입니다.,119입니다.,True,rule
+NIA_SL_SEN0783_REAL07_F,에어컨,에어컨이 조금 부족해요.,조금 에어컨입니다.,False,rule
+NIA_SL_SEN0783_REAL09_F,에어컨,에어컨이 조금 부족해요.,조금 에어컨입니다.,False,rule
+NIA_SL_SEN0966_REAL03_F,천안아산역,천안아산역이 조금 부족해요.,조금 천안아산역입니다.,False,rule
+NIA_SL_SEN1041_REAL10_F,서울역,서울역이 매우 중요해요.,매우 서울역입니다.,False,rule
+NIA_SL_SEN1080_REAL07_F,단말기터치,단말기터치입니다.,단말기터치입니다.,True,rule
+NIA_SL_SEN1111_REAL10_F,편의점,편의점이 매우 중요해요.,매우 편의점입니다.,False,rule
+NIA_SL_SEN1122_REAL13_F,이화여대,이화여대입니다.,이화여대입니다.,True,rule
+NIA_SL_SEN1150_REAL15_F,실수하다,실수함이 조금 부족해요.,조금 실수하다입니다.,False,rule
+NIA_SL_SEN1154_REAL07_F,카드,카드입니다.,카드입니다.,True,rule
+NIA_SL_SEN1180_REAL01_F,여의도,여의도입니다.,여의도입니다.,True,rule
+NIA_SL_SEN1274_REAL12_F,지갑,지갑이 조금 부족해요.,조금 지갑입니다.,False,rule
+NIA_SL_SEN1288_REAL15_F,차밀리다,차밀리다입니다.,차밀리다입니다.,True,rule
+NIA_SL_SEN1311_REAL16_F,사거리,사거리입니다.,사거리입니다.,True,rule
+NIA_SL_SEN1408_REAL06_F,유턴,유턴이 조금 부족해요.,조금 유턴입니다.,False,rule
+NIA_SL_SEN1426_REAL04_F,저기,저기입니다.,저기입니다.,True,rule
+NIA_SL_SEN1434_REAL05_F,이화여대,이화여대입니다.,이화여대입니다.,True,rule
+NIA_SL_SEN1515_REAL02_F,어린이집,어린이집이 조금 부족해요.,조금 어린이집입니다.,False,rule
+NIA_SL_SEN1541_REAL06_F,카드,카드가 조금 부족해요.,조금 카드입니다.,False,rule
+NIA_SL_SEN1558_REAL08_F,여의도,여의도가 조금 부족해요.,조금 여의도입니다.,False,rule
+NIA_SL_SEN1566_REAL02_F,지하철,지하철이 조금 부족해요.,조금 지하철입니다.,False,rule
