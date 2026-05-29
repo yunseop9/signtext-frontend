@@ -22,18 +22,23 @@ function shouldShowDegree(outputMode) {
   ].includes(outputMode);
 }
 
-function getDegreeBadgeLabel(degree) {
-  return getDegreeLabel(degree);
-}
-
 function EmptyState({ status, errorMessage }) {
   const messages = {
-    [ANALYSIS_STATUS.IDLE]: ["대기 중", "웹캠을 선택하거나 영상을 업로드해 주세요."],
-    [ANALYSIS_STATUS.CAMERA_READY]: ["대기 중", "손, 얼굴, 신체가 모두 인식되면 자동으로 분석을 시작합니다."],
-    [ANALYSIS_STATUS.WAITING_KEYPOINTS]: ["인식 대기 중", "손, 얼굴, 신체가 모두 화면 안에 들어오도록 자세와 거리를 조정해 주세요."],
-    [ANALYSIS_STATUS.LOADING]: ["분석 중", "수어 동작을 분석하고 있습니다"],
-    [ANALYSIS_STATUS.ERROR]: ["분석 실패", errorMessage || "결과를 가져올 수 없습니다."],
-    [ANALYSIS_STATUS.CAMERA_DENIED]: ["카메라 권한이 거부되었습니다", "브라우저 주소창 옆 카메라 아이콘에서 권한을 허용해 주세요."],
+    [ANALYSIS_STATUS.IDLE]: ["대기 중", "수어 인식을 준비하고 있습니다."],
+    [ANALYSIS_STATUS.CAMERA_READY]: [
+      "인식 대기 중",
+      "손, 얼굴, 신체가 모두 인식되면 자동으로 분석을 시작합니다.",
+    ],
+    [ANALYSIS_STATUS.WAITING_KEYPOINTS]: [
+      "keypoint 누락",
+      "손, 얼굴, 신체가 모두 화면에 들어오도록 조정해 주세요.",
+    ],
+    [ANALYSIS_STATUS.LOADING]: ["분석 중", "수어 동작을 분석하고 있습니다."],
+    [ANALYSIS_STATUS.ERROR]: ["분석 실패", errorMessage || "다시 시도해 주세요."],
+    [ANALYSIS_STATUS.CAMERA_DENIED]: [
+      "카메라 권한 거부",
+      "브라우저 주소창 왼쪽의 사이트 설정 또는 카메라 아이콘에서 카메라 권한을 허용으로 변경한 뒤 새로고침해 주세요.",
+    ],
   };
 
   const [title, description] = messages[status] ?? messages[ANALYSIS_STATUS.IDLE];
@@ -67,12 +72,9 @@ export function ResultPanel({ status, result, outputMode, errorMessage }) {
   return (
     <aside className="result-panel" aria-label="분석 결과">
       <div className="result-main">
+        {status === ANALYSIS_STATUS.LLM_FALLBACK && <span className="fallback-badge">LLM fallback</span>}
         <h2>{primaryText}</h2>
-        {showDegree && (
-          <div className={`degree-badge ${degree}`}>
-            {getDegreeBadgeLabel(result.degree)}
-          </div>
-        )}
+        {showDegree && <div className={`degree-badge ${degree}`}>{degree}</div>}
         <div className="result-meta">
           <span className="confidence-bar">
             <span style={{ width: confidence === "-" ? "0%" : confidence }} />

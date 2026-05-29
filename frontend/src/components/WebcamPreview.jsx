@@ -1,6 +1,6 @@
 import { ANALYSIS_STATUS } from "../constants/analysisStatus";
 
-export function WebcamPreview({ videoRef, cameraStatus, cameraError, onRetry, status }) {
+export function WebcamPreview({ videoRef, cameraStatus, cameraError, status }) {
   const denied = status === ANALYSIS_STATUS.CAMERA_DENIED;
 
   return (
@@ -14,10 +14,11 @@ export function WebcamPreview({ videoRef, cameraStatus, cameraError, onRetry, st
       )}
       {denied && (
         <div className="permission-panel">
-          <p>{cameraError || "카메라 권한이 거부되었습니다."}</p>
-          <button type="button" onClick={onRetry}>
-            권한 재요청
-          </button>
+          <strong>카메라 권한이 차단되었습니다.</strong>
+          <p>
+            {cameraError ||
+              "브라우저 주소창 왼쪽의 사이트 설정 또는 카메라 아이콘에서 카메라 권한을 허용으로 변경한 뒤 새로고침해 주세요."}
+          </p>
         </div>
       )}
     </div>
