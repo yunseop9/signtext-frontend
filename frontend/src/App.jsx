@@ -113,9 +113,40 @@ export default function App() {
     setIsUploadVideoEnded(true);
   }, []);
 
-  const handleAutoWebcamAnalysis = useCallback(() => {
-    runWebcamAnalysis(outputMode);
-  }, [outputMode, runWebcamAnalysis]);
+  const captureWebcamFrame = useCallback(() => {
+    const video = webcam.videoRef.current;
+
+    if (!video || video.readyState < 2) {
+      return Promise.resolve(null);
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return Promise.resolve(null);
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    return new Promise((resolve) => {
+      canvas.toBlob(
+        (blob) => {
+          resolve(blob);
+        },
+        "image/jpeg",
+        0.9
+      );
+    });
+  }, [webcam.videoRef]);
+
+  const handleAutoWebcamAnalysis = useCallback(async () => {
+    const imageBlob = await captureWebcamFrame();
+    runWebcamAnalysis(outputMode, imageBlob);
+  }, [captureWebcamFrame, outputMode, runWebcamAnalysis]);
 
   useAutoWebcamAnalysis({
     inputMode,

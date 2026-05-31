@@ -72,7 +72,7 @@ export function useAnalysisFlow() {
     setErrorMessage("");
 
     try {
-      const nextResult = await analyzeWebcam({ outputMode });
+      const nextResult = await analyzeWebcam({ outputMode, imageBlob });
       if (requestIdRef.current !== requestId) return;
       applyResult(nextResult);
     } catch (error) {
