@@ -24,6 +24,8 @@ function mapBackendResultToFrontendResult(backendResult, outputMode, source = "u
   const finalText = final.text ?? semantic.final_text ?? rawText;
   const degree = degreeResult.degree ?? "normal";
   const confidence = raw.confidence ?? degreeResult.confidence ?? 0;
+  const wordText = raw.source_word ?? rawText;
+  const sentenceText = rawText;
 
   return {
     status: backendResult.status ?? "success",
@@ -32,7 +34,7 @@ function mapBackendResultToFrontendResult(backendResult, outputMode, source = "u
 
     text: finalText,
     word: rawText,
-    sentence: rawText,
+    sentence: sentenceText,
 
     degree,
     confidence,
@@ -69,6 +71,7 @@ export async function analyzeUpload({ file, outputMode }) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("mode", getBackendMode(outputMode));
+  formData.append("output_mode", outputMode);
 
   const response = await fetch(`${API_BASE_URL}/api/predict/upload`, {
     method: "POST",
@@ -93,6 +96,7 @@ export async function analyzeWebcam({ imageBlob, outputMode }) {
   const formData = new FormData();
   formData.append("file", imageBlob, "webcam-frame.jpg");
   formData.append("mode", getBackendMode(outputMode));
+  formData.append("output_mode", outputMode);
 
   const response = await fetch(`${API_BASE_URL}/api/predict/webcam-frame`, {
     method: "POST",

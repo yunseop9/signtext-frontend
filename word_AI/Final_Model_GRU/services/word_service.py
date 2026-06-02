@@ -151,3 +151,149 @@ if __name__ == "__main__":
         
     except Exception as e:
         print(f"❌ 에러 발생: {e}")
+
+def extract_hands_126_from_411d(sequence_411d):
+    """
+    word_AI 보고서 기준 입력:
+    30F x 126D hands keypoint
+
+    현재 411D 구성:
+    pose 0:75
+    left hand 75:138
+    right hand 138:201
+    face 201:411
+
+    hands 126D = left hand 63D + right hand 63D
+    """
+    arr = np.asarray(sequence_411d, dtype=np.float32)
+
+    if arr.ndim != 2 or arr.shape[1] != 411:
+        raise ValueError(f"411D sequence shape 오류: {arr.shape}")
+
+    hands_126 = arr[:, 75:201].astype(np.float32)
+
+    if hands_126.shape != (30, 126):
+        raise ValueError(f"word_AI 입력 shape 오류: {hands_126.shape}, expected (30, 126)")
+
+    return hands_126
+
+
+def extract_sentence_120_from_411d(sequence_411d):
+    """
+    sentence_AI 입력용 30F x 120D sequence 생성.
+
+    구성:
+    left hand 21점 x,y = 42
+    right hand 21점 x,y = 42
+    pose 18점 x,y = 36
+    total = 120D
+    """
+    arr = np.asarray(sequence_411d, dtype=np.float32)
+
+    if arr.ndim != 2 or arr.shape[1] != 411:
+        raise ValueError(f"411D sequence shape 오류: {arr.shape}")
+
+    pose_75 = arr[:, 0:75].reshape(arr.shape[0], 25, 3)
+    left_63 = arr[:, 75:138].reshape(arr.shape[0], 21, 3)
+    right_63 = arr[:, 138:201].reshape(arr.shape[0], 21, 3)
+
+    left_xy = left_63[:, :, :2].reshape(arr.shape[0], 42)
+    right_xy = right_63[:, :, :2].reshape(arr.shape[0], 42)
+    pose18_xy = pose_75[:, :18, :2].reshape(arr.shape[0], 36)
+
+    sentence_120 = np.concatenate([left_xy, right_xy, pose18_xy], axis=1).astype(np.float32)
+
+    if sentence_120.shape != (30, 120):
+        raise ValueError(f"sentence_AI 입력 shape 오류: {sentence_120.shape}, expected (30, 120)")
+
+    return sentence_120
+
+
+def extract_degree_280_from_411d(sequence_411d):
+    """
+    degree_AI 보고서 기준 입력:
+    1F x 280D
+
+    구성:
+    16D 얼굴 요약 feature
+    + 132D 정규화 얼굴 landmark
+    + 132D delta feature
+    = 280D
+
+    현재 411D의 face 영역은 201:411, 70점 x (x,y,c) = 210D.
+    이 중 앞 66개 얼굴점의 x,y를 사용해 132D를 만든다.
+    """
+    arr = np.asarray(sequence_411d, dtype=np.float32)
+
+    if arr.ndim != 2 or arr.shape[1] != 411:
+        raise ValueError(f"411D sequence shape 오류: {arr.shape}")
+
+    face = arr[:, 201:411].reshape(arr.shape[0], 70, 3)
+    face_xy = face[:, :66, :2]  # 30F x 66 x 2
+
+    # confidence가 전부 0이면 얼굴 검출 실패로 판단
+    face_conf = face[:, :, 2]
+    has_face = bool(np.any(face_conf > 0))
+
+    # 대표 프레임: 중앙 프레임
+    mid_idx = len(face_xy) // 2
+    current_xy = face_xy[mid_idx]
+
+    # 기준 프레임: 첫 프레임
+    base_xy = face_xy[0]
+
+    # 정규화: 얼굴 중심과 scale 기준
+    center = np.mean(current_xy, axis=0)
+    centered = current_xy - center
+
+    scale = np.std(centered)
+    if scale < 1e-6:
+        scale = 1.0
+
+    norm_xy = centered / scale
+    norm_132 = norm_xy.reshape(-1)
+
+    base_center = np.mean(base_xy, axis=0)
+    base_centered = base_xy - base_center
+    base_scale = np.std(base_centered)
+    if base_scale < 1e-6:
+        base_scale = 1.0
+
+    base_norm = base_centered / base_scale
+    delta_132 = (norm_xy - base_norm).reshape(-1)
+
+    # 16D summary feature
+    x = norm_xy[:, 0]
+    y = norm_xy[:, 1]
+    dx = delta_132[0::2]
+    dy = delta_132[1::2]
+
+    summary_16 = np.array([
+        np.mean(x),
+        np.std(x),
+        np.min(x),
+        np.max(x),
+        np.mean(y),
+        np.std(y),
+        np.min(y),
+        np.max(y),
+        np.mean(dx),
+        np.std(dx),
+        np.min(dx),
+        np.max(dx),
+        np.mean(dy),
+        np.std(dy),
+        np.min(dy),
+        np.max(dy),
+    ], dtype=np.float32)
+
+    degree_280 = np.concatenate([
+        summary_16,
+        norm_132.astype(np.float32),
+        delta_132.astype(np.float32),
+    ]).astype(np.float32)
+
+    if degree_280.shape[0] != 280:
+        raise ValueError(f"degree_AI 입력 shape 오류: {degree_280.shape}, expected (280,)")
+
+    return degree_280, has_face

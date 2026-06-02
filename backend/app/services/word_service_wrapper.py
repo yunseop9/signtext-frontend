@@ -4,6 +4,7 @@ from pathlib import Path
 from app.services.video_keypoint_extractor import (
     extract_411d_sequence_from_video,
     summarize_keypoint_sequence,
+    extract_hands_126_from_411d,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -68,7 +69,7 @@ def get_word_engine():
         str(model_path),
         str(label_path),
         str(mapping_path),
-        threshold=0.6,
+        threshold=0.4,
     )
 
     return _word_engine
@@ -108,7 +109,7 @@ def predict_word(video_path: str) -> dict:
     try:
         sequence = extract_411d_sequence_from_video(video_path, target_frames=30)
         summary = summarize_keypoint_sequence(sequence)
-
+        hands_126 = extract_hands_126_from_411d(sequence)
         try:
             word_result = _predict_with_gru(sequence)
 
@@ -121,6 +122,9 @@ def predict_word(video_path: str) -> dict:
                 "status": word_result.get("status", "success"),
                 "top_k": top_k,
                 "model_status": "word_ai_gru_connected",
+                "model_input_shape": list(hands_126.shape),
+                "model_input_type": "30F×126D hands keypoint",
+                "source_keypoint_shape": [summary["sequence_length"], summary["frame_dim"]],
                 "keypoint_summary": summary,
                 "message": "영상에서 30F x 411D keypoint를 추출하고 word_AI GRU 모델 추론을 수행했습니다.",
             }
