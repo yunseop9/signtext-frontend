@@ -6,16 +6,14 @@ import { ANALYSIS_STATUS } from "./constants/analysisStatus";
 import { INPUT_MODES } from "./constants/inputModes";
 import { OUTPUT_MODES } from "./constants/outputModes";
 import { useAnalysisFlow } from "./hooks/useAnalysisFlow";
-import { useAutoWebcamAnalysis } from "./hooks/useAutoWebcamAnalysis";
-import { useKeypointReadiness } from "./hooks/useKeypointReadiness";
 import { useWebcamStream } from "./hooks/useWebcamStream";
+import { recordWebcamClip } from "./utils/recordWebcamClip";
 
 export default function App() {
   const [inputMode, setInputMode] = useState(INPUT_MODES.WEBCAM);
   const [outputMode, setOutputMode] = useState(OUTPUT_MODES.SENTENCE_DEGREE);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadPlayRequestId, setUploadPlayRequestId] = useState(0);
-  const [isUploadVideoEnded, setIsUploadVideoEnded] = useState(false);
   const uploadVideoRef = useRef(null);
 
   const {
@@ -24,7 +22,7 @@ export default function App() {
     result,
     errorMessage,
     setErrorMessage,
-    uploadKeypoints,
+    analysisKeypoints,
     isAnalyzing,
     resetAnalysis,
     runUploadAnalysis,
@@ -33,7 +31,8 @@ export default function App() {
 
   const webcam = useWebcamStream(inputMode === INPUT_MODES.WEBCAM);
   const webcamConnected = webcam.cameraStatus === webcam.CAMERA_STATUS.CONNECTED;
-  const keypointReadiness = useKeypointReadiness(inputMode === INPUT_MODES.WEBCAM && webcamConnected);
+  const interactionLocked =
+    isAnalyzing || status === ANALYSIS_STATUS.RECORDING;
 
   const previewUrl = useMemo(() => {
     if (!selectedFile) return "";
@@ -69,26 +68,24 @@ export default function App() {
     webcamConnected,
   ]);
 
-  const effectiveKeypoints =
-    inputMode === INPUT_MODES.WEBCAM ? keypointReadiness.keypoints : uploadKeypoints;
-
   const handleInputModeChange = useCallback((nextMode) => {
+    if (interactionLocked) return;
+
     setInputMode(nextMode);
     resetAnalysis(ANALYSIS_STATUS.IDLE);
-    setIsUploadVideoEnded(false);
     if (nextMode === INPUT_MODES.UPLOAD) {
       setSelectedFile(null);
     }
-  }, [resetAnalysis]);
+  }, [interactionLocked, resetAnalysis]);
 
   const handleFileChange = useCallback((file) => {
+    if (interactionLocked) return;
+
     setSelectedFile(file);
-    setIsUploadVideoEnded(false);
     resetAnalysis(ANALYSIS_STATUS.IDLE);
-  }, [resetAnalysis]);
+  }, [interactionLocked, resetAnalysis]);
 
   const handleUploadStart = useCallback(() => {
-    setIsUploadVideoEnded(false);
     setUploadPlayRequestId((requestId) => requestId + 1);
 
     if (uploadVideoRef.current) {
@@ -105,71 +102,60 @@ export default function App() {
       uploadVideoRef.current.currentTime = 0;
     }
 
-    setIsUploadVideoEnded(false);
     resetAnalysis(ANALYSIS_STATUS.IDLE);
   }, [resetAnalysis]);
 
-  const handleUploadEnded = useCallback(() => {
-    setIsUploadVideoEnded(true);
-  }, []);
-
-  const captureWebcamFrame = useCallback(() => {
-    const video = webcam.videoRef.current;
-
-    if (!video || video.readyState < 2) {
-      return Promise.resolve(null);
+  const handleWebcamStart = useCallback(async () => {
+    if (!webcam.stream) {
+      setStatus(ANALYSIS_STATUS.ERROR);
+      setErrorMessage("웹캠이 연결된 뒤 다시 시도해 주세요.");
+      return;
     }
 
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    setStatus(ANALYSIS_STATUS.RECORDING);
+    setErrorMessage("");
 
-    const context = canvas.getContext("2d");
-
-    if (!context) {
-      return Promise.resolve(null);
+    try {
+      const videoBlob = await recordWebcamClip(webcam.stream);
+      await runWebcamAnalysis(videoBlob, outputMode);
+    } catch (error) {
+      setStatus(ANALYSIS_STATUS.ERROR);
+      setErrorMessage(error?.message ?? "웹캠 영상을 녹화하지 못했습니다.");
     }
-
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    return new Promise((resolve) => {
-      canvas.toBlob(
-        (blob) => {
-          resolve(blob);
-        },
-        "image/jpeg",
-        0.9
-      );
-    });
-  }, [webcam.videoRef]);
-
-  const handleAutoWebcamAnalysis = useCallback(async () => {
-    const imageBlob = await captureWebcamFrame();
-    runWebcamAnalysis(outputMode, imageBlob);
-  }, [captureWebcamFrame, outputMode, runWebcamAnalysis]);
-
-  useAutoWebcamAnalysis({
-    inputMode,
-    cameraStatus: webcam.cameraStatus,
-    connectedStatus: webcam.CAMERA_STATUS.CONNECTED,
-    keypoints: keypointReadiness.keypoints,
-    status,
-    isAnalyzing,
+  }, [
+    outputMode,
+    runWebcamAnalysis,
+    setErrorMessage,
     setStatus,
-    runWebcamAnalysis: handleAutoWebcamAnalysis,
-  });
+    webcam.stream,
+  ]);
+
+  const handleOutputModeChange = useCallback((nextOutputMode) => {
+    if (interactionLocked) return;
+
+    setOutputMode(nextOutputMode);
+    resetAnalysis(
+      inputMode === INPUT_MODES.WEBCAM && webcamConnected
+        ? ANALYSIS_STATUS.CAMERA_READY
+        : ANALYSIS_STATUS.IDLE,
+    );
+  }, [inputMode, interactionLocked, resetAnalysis, webcamConnected]);
 
   return (
     <main className="app-shell">
-      <AppHeader inputMode={inputMode} onInputModeChange={handleInputModeChange} />
+      <AppHeader
+        inputMode={inputMode}
+        onInputModeChange={handleInputModeChange}
+        disabled={interactionLocked}
+      />
 
       <div className="workspace-grid">
         <MediaWorkspace
           inputMode={inputMode}
           status={status}
-          keypoints={effectiveKeypoints}
+          keypoints={analysisKeypoints}
           outputMode={outputMode}
-          onOutputModeChange={setOutputMode}
+          onOutputModeChange={handleOutputModeChange}
           videoRef={webcam.videoRef}
           cameraStatus={webcam.cameraStatus}
           cameraError={webcam.cameraError}
@@ -180,8 +166,9 @@ export default function App() {
           onFileChange={handleFileChange}
           onUploadStart={handleUploadStart}
           onUploadStop={handleUploadStop}
-          onUploadEnded={handleUploadEnded}
+          onWebcamStart={handleWebcamStart}
           isAnalyzing={isAnalyzing}
+          controlsDisabled={interactionLocked}
         />
 
         <ResultPanel

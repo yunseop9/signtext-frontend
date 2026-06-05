@@ -90,6 +90,13 @@ button {
   color: #fff;
 }
 
+.mode-tab:disabled,
+.output-option:disabled,
+.file-picker:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .workspace-grid {
   display: grid;
   gap: 28px;
@@ -250,6 +257,15 @@ button {
 
 .status-badge.loading {
   color: #f3bc22;
+}
+
+.status-badge.recording {
+  color: #ff9ca7;
+}
+
+.status-badge.recording .status-dot {
+  animation: recording-pulse 1s infinite;
+  background: #ee5362;
 }
 
 .status-badge.loading .status-dot {
@@ -466,6 +482,12 @@ button {
   justify-content: center;
 }
 
+.model-status {
+  color: #6c7484;
+  font-size: 13px;
+  margin: 24px 0 0;
+}
+
 .confidence-bar {
   background: #e4e5ef;
   display: inline-flex;
@@ -491,6 +513,12 @@ button {
   }
   100% {
     left: 100%;
+  }
+}
+
+@keyframes recording-pulse {
+  50% {
+    opacity: 0.3;
   }
 }
 

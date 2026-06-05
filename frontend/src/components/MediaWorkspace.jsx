@@ -23,7 +23,9 @@ export function MediaWorkspace({
   onFileChange,
   onUploadStart,
   onUploadStop,
-  onUploadEnded,
+  onWebcamStart,
+  isAnalyzing,
+  controlsDisabled,
 }) {
   const isUpload = inputMode === INPUT_MODES.UPLOAD;
   const showMediaStatus = status !== ANALYSIS_STATUS.LLM_FALLBACK;
@@ -43,7 +45,6 @@ export function MediaWorkspace({
             file={selectedFile}
             videoRef={uploadVideoRef}
             playRequestId={uploadPlayRequestId}
-            onEnded={onUploadEnded}
           />
         ) : (
           <WebcamPreview
@@ -56,12 +57,21 @@ export function MediaWorkspace({
       </div>
 
       <div className="workspace-controls">
-        <OutputModeSelector value={outputMode} onChange={onOutputModeChange} />
+        <OutputModeSelector
+          value={outputMode}
+          onChange={onOutputModeChange}
+          disabled={controlsDisabled}
+        />
         <div className="start-controls">
           {isUpload && (
             <label className="file-picker">
               파일 선택
-              <input accept="video/*" type="file" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />
+              <input
+                accept=".mp4,.avi,.mov,.mkv,.webm,video/*"
+                type="file"
+                disabled={controlsDisabled}
+                onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+              />
             </label>
           )}
           <StartIndicatorButton
@@ -69,7 +79,14 @@ export function MediaWorkspace({
             status={status}
             onUploadStart={onUploadStart}
             onUploadStop={onUploadStop}
-            disabled={false}
+            onWebcamStart={onWebcamStart}
+            disabled={
+              isUpload
+                ? !selectedFile && status !== ANALYSIS_STATUS.LOADING
+                : isAnalyzing ||
+                  status === ANALYSIS_STATUS.RECORDING ||
+                  cameraStatus !== "connected"
+            }
           />
         </div>
       </div>

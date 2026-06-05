@@ -1,7 +1,7 @@
 export const ANALYSIS_STATUS = {
   IDLE: "idle",
   CAMERA_READY: "camera_ready",
-  WAITING_KEYPOINTS: "waiting_keypoints",
+  RECORDING: "recording",
   LOADING: "loading",
   SUCCESS: "success",
   ERROR: "error",

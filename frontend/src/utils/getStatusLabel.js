@@ -4,7 +4,7 @@ export function getStatusLabel(status) {
   const labels = {
     [ANALYSIS_STATUS.IDLE]: "대기 중",
     [ANALYSIS_STATUS.CAMERA_READY]: "카메라 준비",
-    [ANALYSIS_STATUS.WAITING_KEYPOINTS]: "인식 대기 중",
+    [ANALYSIS_STATUS.RECORDING]: "웹캠 녹화 중",
     [ANALYSIS_STATUS.LOADING]: "분석 중",
     [ANALYSIS_STATUS.SUCCESS]: "분석 완료",
     [ANALYSIS_STATUS.ERROR]: "분석 실패",

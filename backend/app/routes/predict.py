@@ -1,168 +1,221 @@
+import json
 import os
 import uuid
-import json
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from app.services.word_service_wrapper import predict_word
-from app.services.sentence_service_wrapper import predict_sentence
 from app.services.degree_service_wrapper import predict_degree
 from app.services.semantic_service_wrapper import apply_semantic_postprocess
+from app.services.sentence_service_wrapper import predict_sentence
+from app.services.word_service_wrapper import predict_word
+
 
 router = APIRouter(prefix="/api/predict", tags=["predict"])
 
-UPLOAD_DIR = "uploads"
-RESULT_DIR = "results"
+UPLOAD_DIR = Path("uploads")
+RESULT_DIR = Path("results")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(RESULT_DIR, exist_ok=True)
+ALLOWED_OUTPUT_MODES = {
+    "word",
+    "sentence",
+    "degree",
+    "word_degree",
+    "sentence_degree",
+}
+ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+DEGREE_OUTPUT_MODES = {"degree", "word_degree", "sentence_degree"}
+
+
+def _result_failed(result: dict) -> bool:
+    model_status = str(result.get("model_status", ""))
+    return result.get("status") == "error" or model_status.endswith("_error")
+
+
+def _skipped_degree_result() -> dict:
+    return {
+        "status": "skipped",
+        "degree": "normal",
+        "degree_ko": "보통",
+        "confidence": 0.0,
+        "prob_weak": 0.0,
+        "prob_normal": 1.0,
+        "prob_strong": 0.0,
+        "model_status": "degree_not_requested",
+        "message": "현재 출력 모드에서는 표현 정도 모델을 실행하지 않았습니다.",
+    }
+
+
+def _skipped_semantic_result(reason: str) -> dict:
+    return {
+        "apply_degree": False,
+        "final_text": "",
+        "target_expression": "",
+        "modifier": "",
+        "reason": reason,
+        "processor_status": "skipped_model_error",
+    }
+
+
+def _save_result(response: dict) -> str:
+    result_filename = (
+        f"result_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}.json"
+    )
+    result_path = RESULT_DIR / result_filename
+
+    with result_path.open("w", encoding="utf-8") as file:
+        json.dump(response, file, ensure_ascii=False, indent=2)
+
+    return str(result_path)
+
+
+async def _predict_video(
+    file: UploadFile,
+    mode: str,
+    output_mode: str,
+    input_type: str,
+) -> dict:
+    if mode not in {"word", "sentence"}:
+        raise HTTPException(status_code=400, detail="mode는 word 또는 sentence만 가능합니다.")
+
+    if output_mode not in ALLOWED_OUTPUT_MODES:
+        raise HTTPException(status_code=400, detail="지원하지 않는 출력 모드입니다.")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="업로드된 파일이 없습니다.")
+
+    extension = os.path.splitext(file.filename)[1].lower()
+    if extension not in ALLOWED_EXTENSIONS:
+        supported = ", ".join(sorted(ALLOWED_EXTENSIONS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 파일 형식입니다. 지원 형식: {supported}",
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="파일 내용이 비어 있습니다.")
+
+    saved_filename = f"{uuid.uuid4()}{extension}"
+    saved_path = UPLOAD_DIR / saved_filename
+    saved_path.write_bytes(content)
+
+    needs_degree = output_mode in DEGREE_OUTPUT_MODES
+    degree_result = predict_degree(str(saved_path)) if needs_degree else _skipped_degree_result()
+
+    if output_mode == "degree":
+        degree_failed = _result_failed(degree_result)
+        raw_ai_result = {
+            "text": "" if degree_failed else degree_result["degree_ko"],
+            "confidence": degree_result.get("confidence", 0.0),
+            "status": "error" if degree_failed else "success",
+            "model_status": degree_result.get("model_status", "degree_only"),
+            "keypoint_summary": degree_result.get("keypoint_summary", {}),
+            "message": degree_result.get("message", "표현 정도 분석 결과입니다."),
+        }
+
+        if degree_failed:
+            semantic_result = _skipped_semantic_result(
+                "표현 정도 모델 오류로 후처리를 실행하지 않았습니다."
+            )
+            final_result = {"text": "", "modified": False}
+        else:
+            semantic_result = {
+                "apply_degree": False,
+                "final_text": f"표현 정도: {degree_result['degree_ko']}",
+                "target_expression": "",
+                "modifier": "",
+                "reason": "표현 정도 단독 출력 모드입니다.",
+                "processor_status": "degree_only",
+            }
+            final_result = {
+                "text": semantic_result["final_text"],
+                "modified": False,
+            }
+    else:
+        use_sentence = output_mode in {"sentence", "sentence_degree"} or mode == "sentence"
+        raw_ai_result = (
+            predict_sentence(str(saved_path))
+            if use_sentence
+            else predict_word(str(saved_path))
+        )
+
+        raw_failed = _result_failed(raw_ai_result)
+        degree_failed = needs_degree and _result_failed(degree_result)
+
+        if raw_failed or degree_failed:
+            semantic_result = _skipped_semantic_result(
+                "요청한 모델 중 오류가 발생해 후처리를 실행하지 않았습니다."
+            )
+            final_result = {"text": "", "modified": False}
+        else:
+            semantic_result = apply_semantic_postprocess(
+                mode=mode,
+                text=raw_ai_result["text"],
+                degree=degree_result["degree"],
+                degree_ko=degree_result["degree_ko"],
+            )
+
+            if output_mode in {"word", "sentence"}:
+                semantic_result["final_text"] = raw_ai_result["text"]
+                semantic_result["apply_degree"] = False
+                semantic_result["reason"] = (
+                    "단독 출력 모드이므로 표현 정도는 실행하지 않습니다."
+                )
+
+            final_result = {
+                "text": semantic_result["final_text"],
+                "modified": semantic_result["apply_degree"],
+            }
+
+    requested_results = [raw_ai_result]
+    if needs_degree:
+        requested_results.append(degree_result)
+
+    failed_results = [result for result in requested_results if _result_failed(result)]
+    response_status = "error" if failed_results else "success"
+    response_message = (
+        failed_results[0].get("message", "모델 분석에 실패했습니다.")
+        if failed_results
+        else "모델 분석을 완료했습니다."
+    )
+
+    response = {
+        "status": response_status,
+        "message": response_message,
+        "mode": mode,
+        "output_mode": output_mode,
+        "input_type": input_type,
+        "file": {
+            "original_name": file.filename,
+            "saved_name": saved_filename,
+            "saved_path": str(saved_path),
+        },
+        "raw_ai_result": raw_ai_result,
+        "degree_result": degree_result,
+        "semantic_llm_result": semantic_result,
+        "final_result": final_result,
+    }
+    response["result_path"] = _save_result(response)
+    return response
 
 
 @router.post("/upload")
 async def predict_upload(
     file: UploadFile = File(...),
     mode: str = Form("word"),
-    output_mode: str = Form("word_degree")
+    output_mode: str = Form("word_degree"),
 ):
-    try:
-        if mode not in ["word", "sentence"]:
-            raise HTTPException(
-                status_code=400,
-                detail="mode는 word 또는 sentence만 가능합니다."
-            )
+    return await _predict_video(file, mode, output_mode, input_type="upload")
 
-        allowed_output_modes = [
-            "word",
-            "sentence",
-            "degree",
-            "word_degree",
-            "sentence_degree"
-        ]
 
-        if output_mode not in allowed_output_modes:
-            output_mode = "word_degree"
-
-        if not file.filename:
-            raise HTTPException(
-                status_code=400,
-                detail="업로드된 파일이 없습니다."
-            )
-
-        allowed_ext = [".mp4", ".avi", ".mov", ".mkv"]
-        ext = os.path.splitext(file.filename)[1].lower()
-
-        if ext not in allowed_ext:
-            raise HTTPException(
-                status_code=400,
-                detail="지원하지 않는 파일 형식입니다. mp4, avi, mov, mkv 파일만 업로드할 수 있습니다."
-            )
-
-        saved_filename = f"{uuid.uuid4()}{ext}"
-        saved_path = os.path.join(UPLOAD_DIR, saved_filename)
-
-        content = await file.read()
-
-        if len(content) == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="파일 내용이 비어 있습니다."
-            )
-
-        with open(saved_path, "wb") as f:
-            f.write(content)
-
-        # 1. 모든 모드에서 degree는 계산한다.
-        degree_result = predict_degree(saved_path)
-
-        # 2. 출력 모드에 따라 raw_ai_result 구성
-        if output_mode == "degree":
-            raw_ai_result = {
-                "text": degree_result["degree_ko"],
-                "confidence": degree_result["confidence"],
-                "status": "success",
-                "model_status": degree_result.get("model_status", "degree_only"),
-                "message": "표현정도만 분석한 결과입니다."
-            }
-
-            semantic_llm_result = {
-                "apply_degree": False,
-                "final_text": f"표현 정도: {degree_result['degree_ko']}",
-                "target_expression": "",
-                "modifier": "",
-                "reason": "표현정도 단독 출력 모드입니다.",
-                "processor_status": "degree_only"
-            }
-
-            final_result = {
-                "text": semantic_llm_result["final_text"],
-                "modified": False
-            }
-
-        else:
-            if output_mode in ["sentence", "sentence_degree"] or mode == "sentence":
-                raw_ai_result = predict_sentence(saved_path)
-            else:
-                raw_ai_result = predict_word(saved_path)
-
-            semantic_llm_result = apply_semantic_postprocess(
-                mode=mode,
-                text=raw_ai_result["text"],
-                degree=degree_result["degree"],
-                degree_ko=degree_result["degree_ko"]
-            )
-
-            # 단어만 / 문장만 모드에서는 degree를 최종 문장에 강제로 반영하지 않음
-            if output_mode in ["word", "sentence"]:
-                final_result = {
-                    "text": raw_ai_result["text"],
-                    "modified": False
-                }
-                semantic_llm_result["final_text"] = raw_ai_result["text"]
-                semantic_llm_result["apply_degree"] = False
-                semantic_llm_result["reason"] = "단독 출력 모드이므로 표현정도는 별도 정보로만 표시합니다."
-
-                final_result = {
-                    "text": raw_ai_result["text"],
-                    "modified": False
-        }
-            else:
-                final_result = {
-                    "text": semantic_llm_result["final_text"],
-                    "modified": semantic_llm_result["apply_degree"]
-                }
-
-        response = {
-            "status": "success",
-            "mode": mode,
-            "output_mode": output_mode,
-            "input_type": "upload",
-            "file": {
-                "original_name": file.filename,
-                "saved_name": saved_filename,
-                "saved_path": saved_path
-            },
-            "raw_ai_result": raw_ai_result,
-            "degree_result": degree_result,
-            "semantic_llm_result": semantic_llm_result,
-            "final_result": final_result
-        }
-
-        result_filename = f"result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        result_path = os.path.join(RESULT_DIR, result_filename)
-
-        with open(result_path, "w", encoding="utf-8") as f:
-            json.dump(response, f, ensure_ascii=False, indent=2)
-
-        response["result_path"] = result_path
-
-        return response
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+@router.post("/webcam")
+async def predict_webcam(
+    file: UploadFile = File(...),
+    mode: str = Form("word"),
+    output_mode: str = Form("word_degree"),
+):
+    return await _predict_video(file, mode, output_mode, input_type="webcam")

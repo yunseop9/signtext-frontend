@@ -1,10 +1,13 @@
+import contextlib
+import io
 import sys
 from pathlib import Path
 
 from app.services.video_keypoint_extractor import (
-    extract_411d_sequence_from_video,
-    summarize_keypoint_sequence,
+    extract_openpose_frames_from_video,
+    extract_word_411d_sequence_from_video,
     extract_hands_126_from_411d,
+    summarize_openpose_frames,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -17,6 +20,12 @@ WORD_SERVICE_DIR = (
 )
 
 WORD_MODEL_DIR = (
+    PROJECT_ROOT
+    / "모델"
+    / "단어"
+)
+
+WORD_METADATA_DIR = (
     PROJECT_ROOT
     / "word_AI"
     / "Final_Model_GRU"
@@ -53,8 +62,8 @@ def get_word_engine():
         raise RuntimeError(f"word_service import 실패: {WORD_IMPORT_ERROR}")
 
     model_path = WORD_MODEL_DIR / "best_model.keras"
-    label_path = WORD_MODEL_DIR / "label_map.json"
-    mapping_path = WORD_MODEL_DIR / "word_label_mapping.csv"
+    label_path = WORD_METADATA_DIR / "label_map.json"
+    mapping_path = WORD_METADATA_DIR / "word_label_mapping.csv"
 
     if not model_path.exists():
         raise FileNotFoundError(f"word 모델 파일을 찾을 수 없습니다: {model_path}")
@@ -65,12 +74,15 @@ def get_word_engine():
     if not mapping_path.exists():
         raise FileNotFoundError(f"word_label_mapping 파일을 찾을 수 없습니다: {mapping_path}")
 
-    _word_engine = GRUWordInference(
-        str(model_path),
-        str(label_path),
-        str(mapping_path),
-        threshold=0.4,
-    )
+    # 기존 추론 서비스가 이모지를 stdout에 출력해 Windows CP949 환경에서
+    # 초기화가 실패할 수 있으므로 모델 로딩 로그만 숨긴다.
+    with contextlib.redirect_stdout(io.StringIO()):
+        _word_engine = GRUWordInference(
+            str(model_path),
+            str(label_path),
+            str(mapping_path),
+            threshold=0.4,
+        )
 
     return _word_engine
 
@@ -107,8 +119,8 @@ def predict_word(video_path: str) -> dict:
     백엔드 시연 흐름이 끊기지 않게 한다.
     """
     try:
-        sequence = extract_411d_sequence_from_video(video_path, target_frames=30)
-        summary = summarize_keypoint_sequence(sequence)
+        sequence = extract_word_411d_sequence_from_video(video_path, target_frames=30)
+        summary = summarize_openpose_frames(extract_openpose_frames_from_video(video_path))
         hands_126 = extract_hands_126_from_411d(sequence)
         try:
             word_result = _predict_with_gru(sequence)
@@ -122,11 +134,13 @@ def predict_word(video_path: str) -> dict:
                 "status": word_result.get("status", "success"),
                 "top_k": top_k,
                 "model_status": "word_ai_gru_connected",
+                "model_path": str(WORD_MODEL_DIR / "best_model.keras"),
+                "keypoint_extractor": summary["extractor"],
                 "model_input_shape": list(hands_126.shape),
                 "model_input_type": "30F×126D hands keypoint",
                 "source_keypoint_shape": [summary["sequence_length"], summary["frame_dim"]],
                 "keypoint_summary": summary,
-                "message": "영상에서 30F x 411D keypoint를 추출하고 word_AI GRU 모델 추론을 수행했습니다.",
+                "message": "OpenPose keypoints were preprocessed with the word-training pipeline before GRU inference.",
             }
 
         except Exception as model_error:

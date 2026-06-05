@@ -1,48 +1,71 @@
-from app.services.word_service_wrapper import predict_word
+EMOTION_STATE_TERMS = [
+    "화났다",
+    "화나다",
+    "슬프다",
+    "무섭다",
+    "행복하다",
+    "기쁘다",
+    "아프다",
+    "피곤하다",
+    "걱정된다",
+    "불안하다",
+    "좋다",
+    "싫다",
+    "힘들다",
+    "우울하다",
+    "짜증난다",
+    "놀랐다",
+]
 
 
-def make_sentence_from_word(word: str) -> str:
-    """
-    sentence_AI 실제 추론 모델 연결 전,
-    word_AI 결과를 문장형 출력으로 변환하는 fallback.
-    """
-    if not word or word in ["인식불가", "인식 대기", "영상 분석 실패", "keypoint 추출 성공"]:
-        return word
-
-    sentence_map = {
-        "화나다": "나는 화났다",
-        "아프다": "몸이 아픕니다",
-        "감사합니다": "정말 감사합니다",
-        "도와주세요": "도움이 필요합니다",
-        "싫다": "나는 싫습니다",
-        "좋다": "나는 좋습니다",
-        "미안합니다": "미안합니다",
-        "안녕하세요": "안녕하세요",
-    }
-
-    return sentence_map.get(word, word)
+def _modifier_for_degree(degree):
+    if degree == "weak":
+        return "조금"
+    if degree == "strong":
+        return "매우"
+    return ""
 
 
-def predict_sentence(video_path: str) -> dict:
-    """
-    문장 수어 분석 서비스.
-    현재 sentence_AI는 부분구현 범위이므로, word_AI 예측 결과를 기반으로 문장형 결과를 구성한다.
-    추후 sentence_AI 실제 모델이 확정되면 이 함수 내부만 교체하면 된다.
-    """
-    word_result = predict_word(video_path)
+def apply_semantic_postprocess(mode: str, text: str, degree: str, degree_ko: str) -> dict:
+    text = str(text or "").strip()
+    modifier = _modifier_for_degree(str(degree).lower())
 
-    word_text = word_result.get("text", "인식불가")
-    sentence_text = make_sentence_from_word(word_text)
-    confidence = float(word_result.get("confidence", 0.0))
+    if not text or not modifier:
+        return {
+            "apply_degree": False,
+            "final_text": text,
+            "target_expression": "",
+            "modifier": "",
+            "reason": "텍스트가 비어 있거나 표현 정도가 보통이므로 원문을 유지합니다.",
+            "processor_status": "rule",
+        }
+
+    if mode == "sentence":
+        for term in sorted(EMOTION_STATE_TERMS, key=len, reverse=True):
+            if term in text:
+                return {
+                    "apply_degree": True,
+                    "final_text": text.replace(term, f"{modifier} {term}", 1),
+                    "target_expression": term,
+                    "modifier": modifier,
+                    "reason": f"문장 내 감정·상태 표현에 {degree_ko} 정도를 반영했습니다.",
+                    "processor_status": "rule_guard",
+                }
+
+        return {
+            "apply_degree": False,
+            "final_text": text,
+            "target_expression": "",
+            "modifier": "",
+            "reason": "일반 문장으로 판단하여 원문을 유지합니다.",
+            "processor_status": "rule_guard",
+        }
 
     return {
-        "text": sentence_text,
-        "confidence": confidence,
-        "status": word_result.get("status", "success"),
-        "source_word": word_text,
-        "word_id": word_result.get("word_id"),
-        "top_k": word_result.get("top_k", []),
-        "keypoint_summary": word_result.get("keypoint_summary", {}),
-        "model_status": "sentence_fallback_from_word_ai",
-        "message": "sentence_AI 실제 모델 연결 전, word_AI 결과를 기반으로 문장형 결과를 구성했습니다."
+        "apply_degree": True,
+        "final_text": f"{modifier} {text}",
+        "target_expression": text,
+        "modifier": modifier,
+        "reason": f"단어 결과에 {degree_ko} 정도를 반영했습니다.",
+        "processor_status": "rule",
     }

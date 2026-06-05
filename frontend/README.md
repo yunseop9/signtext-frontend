@@ -36,28 +36,26 @@ frontend/
 
     hooks/
       useAnalysisFlow.js
-      useAutoWebcamAnalysis.js
       useWebcamStream.js
-      useKeypointReadiness.js
-
-    mocks/
-      mockAnalysisResult.js
-      mockKeypointDetector.js
 
     utils/
       formatConfidence.js
       getStatusLabel.js
       getDegreeLabel.js
+      recordWebcamClip.js
 ```
 
 ## Current Behavior
 
-- 웹캠 모드에서는 카메라 권한을 요청하고, 손/얼굴/신체 keypoint가 모두 인식되면 자동으로 분석을 시작합니다.
-- 웹캠 모드의 `시작` 버튼은 클릭 트리거가 아니라 현재 자동 분석 상태를 표시합니다.
-- 업로드 모드에서는 파일을 선택한 뒤 `시작` 버튼으로 분석을 실행합니다.
-- 현재 AI 분석과 keypoint 감지는 mock으로 동작하며, 실제 API/MediaPipe 연결 시 `api/`와 `hooks/` 내부만 교체하면 됩니다.
+- 웹캠 모드에서는 카메라 권한을 요청하고, 버튼을 누르면 약 3초간 녹화한 영상을 백엔드 `/api/predict/webcam`으로 전송합니다.
+- 업로드 모드에서는 파일을 선택한 뒤 백엔드 `/api/predict/upload`로 전송합니다.
+- 단어, 문장, 표현 정도, 결합 출력 모드는 모두 백엔드의 실제 모델 응답을 사용합니다.
+- keypoint 상태, 신뢰도, 모델 상태는 백엔드 OpenPose 및 모델 응답에서 가져옵니다.
+- 개발 서버에서는 `/api` 요청을 `http://127.0.0.1:8000`으로 프록시합니다. 다른 주소는 `VITE_API_BASE_URL`로 설정할 수 있습니다.
 
 ## Commands
+
+백엔드가 `http://127.0.0.1:8000`에서 실행 중이고 OpenPose가 설정되어 있어야 실제 분석 결과를 받을 수 있습니다.
 
 ```bash
 npm install

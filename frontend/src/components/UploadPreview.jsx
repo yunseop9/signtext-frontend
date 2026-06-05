@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-export function UploadPreview({ previewUrl, file, videoRef, playRequestId, onEnded }) {
+export function UploadPreview({ previewUrl, file, videoRef, playRequestId }) {
   useEffect(() => {
     if (!playRequestId || !videoRef.current) return undefined;
 
@@ -33,7 +33,6 @@ export function UploadPreview({ previewUrl, file, videoRef, playRequestId, onEnd
           muted
           preload="auto"
           ref={videoRef}
-          onEnded={onEnded}
         />
       ) : (
         <div className="preview-placeholder">

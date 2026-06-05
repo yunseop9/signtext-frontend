@@ -1,6 +1,6 @@
 import { INPUT_MODE_OPTIONS } from "../constants/inputModes";
 
-export function InputModeTabs({ value, onChange }) {
+export function InputModeTabs({ value, onChange, disabled }) {
   return (
     <div className="input-mode-tabs" aria-label="입력 방식 선택">
       {INPUT_MODE_OPTIONS.map((option) => (
@@ -8,6 +8,7 @@ export function InputModeTabs({ value, onChange }) {
           className={option.id === value ? "mode-tab active" : "mode-tab"}
           key={option.id}
           type="button"
+          disabled={disabled}
           onClick={() => onChange(option.id)}
         >
           {option.label}

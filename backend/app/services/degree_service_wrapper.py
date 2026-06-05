@@ -4,28 +4,27 @@ import joblib
 import numpy as np
 
 from app.services.video_keypoint_extractor import (
-    extract_411d_sequence_from_video,
-    extract_degree_280_from_411d,
+    extract_openpose_frames_from_video,
+    preprocess_degree_openpose_frames,
+    summarize_openpose_frames,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 DEGREE_MODEL_CANDIDATES = [
+    PROJECT_ROOT / "모델" / "정도표현" / "degree_frame_280d_anger_mlp.joblib",
     PROJECT_ROOT / "degree_AI" / "models" / "degree_frame_280d_anger_mlp.joblib",
-    PROJECT_ROOT / "degree_AI" / "models" / "degree_1f_280d_mlp.joblib",
-    PROJECT_ROOT / "degree_AI" / "models" / "degree_mlp_280d.joblib",
-    PROJECT_ROOT / "degree_AI" / "models" / "best_degree_mlp.joblib",
 ]
 
-LABEL_CANDIDATES = [
-    PROJECT_ROOT / "degree_AI" / "models" / "label_info_seq_anger.joblib",
-    PROJECT_ROOT / "degree_AI" / "models" / "label_info_anger.joblib",
-    PROJECT_ROOT / "degree_AI" / "models" / "label_info.joblib",
-]
+DEFAULT_LABEL_NAMES = ["weak", "normal", "strong"]
+DEGREE_KO = {
+    "weak": "약함",
+    "normal": "보통",
+    "strong": "강함",
+}
 
-
-_degree_model = None
+_degree_bundle = None
 _degree_model_path = None
 
 
@@ -36,139 +35,131 @@ def _find_existing_path(paths):
     return None
 
 
-def get_degree_model():
-    global _degree_model, _degree_model_path
+def get_degree_bundle():
+    global _degree_bundle, _degree_model_path
 
-    if _degree_model is not None:
-        return _degree_model
+    if _degree_bundle is not None:
+        return _degree_bundle
 
     model_path = _find_existing_path(DEGREE_MODEL_CANDIDATES)
-
     if model_path is None:
-        searched = "\n".join(str(p) for p in DEGREE_MODEL_CANDIDATES)
-        raise FileNotFoundError(
-            "degree_AI 1F×280D MLP 모델 파일을 찾을 수 없습니다.\n"
-            "필요한 파일 후보:\n"
-            f"{searched}"
-        )
+        searched = "\n".join(str(path) for path in DEGREE_MODEL_CANDIDATES)
+        raise FileNotFoundError(f"degree_AI 모델 파일을 찾을 수 없습니다.\n{searched}")
 
-    _degree_model = joblib.load(model_path)
-    _degree_model_path = model_path
-
-    return _degree_model
-
-
-def _normalize_degree_label(label):
-    label_str = str(label).lower()
-
-    if label_str in ["0", "weak", "약함"]:
-        return "weak", "약함"
-    if label_str in ["1", "normal", "보통"]:
-        return "normal", "보통"
-    if label_str in ["2", "strong", "강함"]:
-        return "strong", "강함"
-
-    return "normal", "보통"
-
-
-def _fallback_rule_degree(feature_280):
-    """
-    degree_AI 모델 파일이 없을 때만 사용하는 fallback.
-    보고서 기준 최종 구조와 구분하기 위해 model_status에 fallback 표시.
-    """
-    delta = feature_280[16 + 132:]
-    score = float(np.mean(np.abs(delta)))
-
-    if score < 0.02:
-        degree = "weak"
-        degree_ko = "약함"
-        probs = [0.72, 0.22, 0.06]
-    elif score < 0.06:
-        degree = "normal"
-        degree_ko = "보통"
-        probs = [0.18, 0.68, 0.14]
+    loaded = joblib.load(model_path)
+    if isinstance(loaded, dict) and "model" in loaded:
+        bundle = loaded
     else:
-        degree = "strong"
-        degree_ko = "강함"
-        probs = [0.08, 0.22, 0.70]
+        bundle = {
+            "model": loaded,
+            "label_names": DEFAULT_LABEL_NAMES,
+            "input_shape": [280],
+        }
 
-    return degree, degree_ko, probs, score
+    model = bundle["model"]
+    if not hasattr(model, "predict"):
+        raise TypeError(f"degree 모델에 predict 함수가 없습니다: {type(model).__name__}")
+
+    expected_features = int(getattr(model, "n_features_in_", 280))
+    if expected_features != 280:
+        raise ValueError(f"degree 모델 입력 차원이 280D가 아닙니다: {expected_features}")
+
+    _degree_bundle = bundle
+    _degree_model_path = model_path
+    return _degree_bundle
+
+
+def _predict_average_probabilities(model, features, label_count):
+    if hasattr(model, "predict_proba"):
+        probabilities = np.asarray(model.predict_proba(features), dtype=np.float32)
+        return np.mean(probabilities, axis=0)
+
+    predictions = np.asarray(model.predict(features), dtype=np.int64)
+    probabilities = np.zeros((len(predictions), label_count), dtype=np.float32)
+
+    for row, prediction in enumerate(predictions):
+        if 0 <= int(prediction) < label_count:
+            probabilities[row, int(prediction)] = 1.0
+
+    return np.mean(probabilities, axis=0)
 
 
 def predict_degree(video_path: str) -> dict:
-    """
-    보고서 기준 degree_AI 구조.
-
-    mp4
-    → 30F×411D 공통 keypoint
-    → 1F×280D face feature
-    → degree_AI MLP 모델
-    → weak / normal / strong 반환
-    """
     try:
-        sequence_411d = extract_411d_sequence_from_video(video_path, target_frames=30)
-        feature_280, has_face = extract_degree_280_from_411d(sequence_411d)
+        frames = extract_openpose_frames_from_video(video_path)
+        keypoint_summary = summarize_openpose_frames(frames)
+        features, has_face = preprocess_degree_openpose_frames(frames)
+
+        if not has_face:
+            return {
+                "status": "success",
+                "degree": "normal",
+                "degree_ko": "보통",
+                "confidence": 0.0,
+                "prob_weak": 0.0,
+                "prob_normal": 1.0,
+                "prob_strong": 0.0,
+                "has_face": False,
+                "num_used_frames": 0,
+                "model_status": "degree_ai_no_face",
+                "keypoint_extractor": "openpose",
+                "keypoint_summary": keypoint_summary,
+                "model_input_shape": list(features.shape),
+                "message": "얼굴 keypoint가 검출되지 않아 표현 정도를 보통으로 반환했습니다.",
+            }
 
         try:
-            model = get_degree_model()
+            bundle = get_degree_bundle()
+            model = bundle["model"]
+            label_names = list(bundle.get("label_names", DEFAULT_LABEL_NAMES))
+            probabilities = _predict_average_probabilities(model, features, len(label_names))
+            best_index = int(np.argmax(probabilities))
+            degree = label_names[best_index]
 
-            x = feature_280.reshape(1, -1).astype(np.float32)
-
-            pred = model.predict(x)[0]
-            degree, degree_ko = _normalize_degree_label(pred)
-
-            if hasattr(model, "predict_proba"):
-                proba = model.predict_proba(x)[0]
-                proba = np.asarray(proba, dtype=np.float32)
-
-                if len(proba) >= 3:
-                    prob_weak = float(proba[0])
-                    prob_normal = float(proba[1])
-                    prob_strong = float(proba[2])
-                else:
-                    prob_weak, prob_normal, prob_strong = 0.0, 1.0, 0.0
-            else:
-                prob_weak = 1.0 if degree == "weak" else 0.0
-                prob_normal = 1.0 if degree == "normal" else 0.0
-                prob_strong = 1.0 if degree == "strong" else 0.0
-
-            confidence = max(prob_weak, prob_normal, prob_strong)
+            probability_by_label = {
+                label: float(probabilities[index])
+                for index, label in enumerate(label_names)
+            }
 
             return {
+                "status": "success",
                 "degree": degree,
-                "degree_ko": degree_ko,
-                "confidence": float(confidence),
-                "prob_weak": float(prob_weak),
-                "prob_normal": float(prob_normal),
-                "prob_strong": float(prob_strong),
+                "degree_ko": DEGREE_KO.get(degree, degree),
+                "confidence": float(probabilities[best_index]),
+                "prob_weak": probability_by_label.get("weak", 0.0),
+                "prob_normal": probability_by_label.get("normal", 0.0),
+                "prob_strong": probability_by_label.get("strong", 0.0),
                 "has_face": has_face,
-                "model_status": "degree_ai_1f_280d_mlp_connected",
+                "num_used_frames": int(len(features)),
+                "model_status": "degree_ai_frame_280d_mlp_connected",
                 "model_path": str(_degree_model_path),
-                "model_input_shape": list(feature_280.shape),
-                "model_input_type": "1F×280D face feature",
-                "message": "영상에서 1F×280D 얼굴표현 feature를 생성한 뒤 degree_AI MLP 모델 추론을 수행했습니다.",
+                "keypoint_extractor": "openpose",
+                "keypoint_summary": keypoint_summary,
+                "model_input_shape": list(features.shape),
+                "model_input_type": "valid OpenPose face frames, averaged 1F×280D predictions",
+                "message": "Valid OpenPose face frames were preprocessed with the degree-training pipeline before MLP inference.",
             }
 
         except Exception as model_error:
-            degree, degree_ko, probs, score = _fallback_rule_degree(feature_280)
-
             return {
-                "degree": degree,
-                "degree_ko": degree_ko,
-                "confidence": float(max(probs)),
-                "prob_weak": float(probs[0]),
-                "prob_normal": float(probs[1]),
-                "prob_strong": float(probs[2]),
-                "score": float(score),
+                "status": "error",
+                "degree": "normal",
+                "degree_ko": "보통",
+                "confidence": 0.0,
+                "prob_weak": 0.0,
+                "prob_normal": 1.0,
+                "prob_strong": 0.0,
                 "has_face": has_face,
-                "model_status": "degree_ai_1f_280d_fallback",
-                "model_input_shape": list(feature_280.shape),
-                "model_input_type": "1F×280D face feature",
-                "message": f"1F×280D feature 생성은 성공했지만 degree_AI 모델 연결에 실패하여 fallback을 사용했습니다: {model_error}",
+                "model_status": "degree_ai_model_error",
+                "keypoint_extractor": "openpose",
+                "keypoint_summary": keypoint_summary,
+                "model_input_shape": list(features.shape),
+                "message": f"degree 모델 연결 또는 추론에 실패했습니다: {model_error}",
             }
 
-    except Exception as e:
+    except Exception as error:
         return {
+            "status": "error",
             "degree": "normal",
             "degree_ko": "보통",
             "confidence": 0.0,
@@ -176,5 +167,5 @@ def predict_degree(video_path: str) -> dict:
             "prob_normal": 1.0,
             "prob_strong": 0.0,
             "model_status": "degree_ai_error",
-            "message": str(e),
+            "message": str(error),
         }

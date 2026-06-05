@@ -9,8 +9,8 @@ function getPrimaryText(result, outputMode) {
 
   if (outputMode === OUTPUT_MODES.WORD) return result.word;
   if (outputMode === OUTPUT_MODES.SENTENCE) return result.sentence;
-  if (outputMode === OUTPUT_MODES.DEGREE) return getDegreeLabel(result.degree);
-  if (outputMode === OUTPUT_MODES.WORD_DEGREE) return result.word;
+  if (outputMode === OUTPUT_MODES.DEGREE) return result.degreeText;
+  if (outputMode === OUTPUT_MODES.WORD_DEGREE) return result.finalText || result.word;
   return result.finalText || result.sentence || result.text;
 }
 
@@ -26,14 +26,14 @@ function EmptyState({ status, errorMessage }) {
   const messages = {
     [ANALYSIS_STATUS.IDLE]: ["대기 중", "수어 인식을 준비하고 있습니다."],
     [ANALYSIS_STATUS.CAMERA_READY]: [
-      "인식 대기 중",
-      "손, 얼굴, 신체가 모두 인식되면 자동으로 분석을 시작합니다.",
-    ],
-    [ANALYSIS_STATUS.WAITING_KEYPOINTS]: [
-      "keypoint 누락",
-      "손, 얼굴, 신체가 모두 화면에 들어오도록 조정해 주세요.",
+      "웹캠 준비 완료",
+      "수어 동작을 준비한 뒤 '3초 녹화 후 분석' 버튼을 눌러 주세요.",
     ],
     [ANALYSIS_STATUS.LOADING]: ["분석 중", "수어 동작을 분석하고 있습니다."],
+    [ANALYSIS_STATUS.RECORDING]: [
+      "웹캠 녹화 중",
+      "카메라를 보며 분석할 수어 동작을 보여 주세요.",
+    ],
     [ANALYSIS_STATUS.ERROR]: ["분석 실패", errorMessage || "다시 시도해 주세요."],
     [ANALYSIS_STATUS.CAMERA_DENIED]: [
       "카메라 권한 거부",
@@ -74,7 +74,11 @@ export function ResultPanel({ status, result, outputMode, errorMessage }) {
       <div className="result-main">
         {status === ANALYSIS_STATUS.LLM_FALLBACK && <span className="fallback-badge">LLM fallback</span>}
         <h2>{primaryText}</h2>
-        {showDegree && <div className={`degree-badge ${degree}`}>{degree}</div>}
+        {showDegree && (
+          <div className={`degree-badge ${degree}`}>
+            {result.degreeText ?? degree}
+          </div>
+        )}
         <div className="result-meta">
           <span className="confidence-bar">
             <span style={{ width: confidence === "-" ? "0%" : confidence }} />
@@ -82,6 +86,9 @@ export function ResultPanel({ status, result, outputMode, errorMessage }) {
           <strong>{confidence}</strong>
           <span>신뢰도</span>
         </div>
+        {result.modelStatus && (
+          <p className="model-status">모델 상태: {result.modelStatus}</p>
+        )}
       </div>
     </aside>
   );

@@ -3,21 +3,21 @@ from pathlib import Path
 import numpy as np
 
 from app.services.video_keypoint_extractor import (
-    extract_411d_sequence_from_video,
-    summarize_keypoint_sequence,
-    extract_sentence_120_from_411d,
+    extract_openpose_frames_from_video,
+    extract_sentence_120_sequence_from_video,
+    summarize_openpose_frames,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 SENTENCE_MODEL_CANDIDATES = [
+    PROJECT_ROOT / "모델" / "문장" / "gru_augmented_20260522-061239.keras",
     PROJECT_ROOT / "sen_AI" / "gru" / "gru_best.keras",
-    PROJECT_ROOT / "sen_AI" / "lstm" / "lstm_best.keras",
-    PROJECT_ROOT / "sen_AI" / "cnn" / "cnn_best.keras",
 ]
 
 CLASSES_CANDIDATES = [
+    PROJECT_ROOT / "모델" / "문장" / "classes.npy",
     PROJECT_ROOT / "sen_AI" / "data" / "validation" / "classes.npy",
     PROJECT_ROOT / "sen_AI" / "data" / "processed" / "classes.npy",
     PROJECT_ROOT / "sen_AI" / "classes.npy",
@@ -54,7 +54,7 @@ def get_sentence_model():
 
     import tensorflow as tf
 
-    _sentence_model = tf.keras.models.load_model(str(model_path))
+    _sentence_model = tf.keras.models.load_model(str(model_path), compile=False)
     _sentence_model_path = model_path
 
     return _sentence_model
@@ -77,6 +77,14 @@ def get_sentence_classes():
         )
 
     _sentence_classes = np.load(classes_path, allow_pickle=True)
+
+    model = get_sentence_model()
+    output_dim = int(model.output_shape[-1])
+    if len(_sentence_classes) != output_dim:
+        raise ValueError(
+            f"sentence classes 개수({len(_sentence_classes)})와 "
+            f"모델 출력 차원({output_dim})이 다릅니다."
+        )
 
     return _sentence_classes
 
@@ -113,19 +121,13 @@ def _predict_sentence(sequence_120):
 
 def predict_sentence(video_path: str) -> dict:
     """
-    보고서 기준 sentence_AI 실제 호출 구조.
-
-    mp4
-    → 30F×411D 공통 keypoint
-    → sentence_AI용 30F×120D sequence
-    → GRU/LSTM/CNN sentence model
-    → sentence_result, Top-3 후보 반환
+    Run the sentence GRU with the same OpenPose preprocessing used for training.
     """
     try:
-        sequence_411d = extract_411d_sequence_from_video(video_path, target_frames=30)
-        summary = summarize_keypoint_sequence(sequence_411d)
-
-        sequence_120 = extract_sentence_120_from_411d(sequence_411d)
+        sequence_120 = extract_sentence_120_sequence_from_video(
+            video_path, target_frames=30
+        )
+        summary = summarize_openpose_frames(extract_openpose_frames_from_video(video_path))
 
         result = _predict_sentence(sequence_120)
 
@@ -137,11 +139,12 @@ def predict_sentence(video_path: str) -> dict:
             "top_k": result["top_k"],
             "model_status": "sentence_ai_model_connected",
             "model_path": str(_sentence_model_path),
+            "keypoint_extractor": summary["extractor"],
             "model_input_shape": list(sequence_120.shape),
             "model_input_type": "30F×120D sentence sequence",
             "source_keypoint_shape": [summary["sequence_length"], summary["frame_dim"]],
             "keypoint_summary": summary,
-            "message": "영상에서 30F×411D 공통 keypoint를 생성한 뒤 sentence_AI 입력 sequence로 변환하여 문장 GRU 모델 추론을 수행했습니다.",
+            "message": "OpenPose keypoints were preprocessed with the sentence-training pipeline before GRU inference.",
         }
 
     except Exception as e:
