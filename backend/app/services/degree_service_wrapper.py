@@ -4,9 +4,9 @@ import joblib
 import numpy as np
 
 from app.services.video_keypoint_extractor import (
-    extract_openpose_frames_from_video,
-    preprocess_degree_openpose_frames,
-    summarize_openpose_frames,
+    extract_mediapipe_frames_from_video,
+    preprocess_degree_mediapipe_frames,
+    summarize_mediapipe_frames,
 )
 
 
@@ -86,9 +86,9 @@ def _predict_average_probabilities(model, features, label_count):
 
 def predict_degree(video_path: str) -> dict:
     try:
-        frames = extract_openpose_frames_from_video(video_path)
-        keypoint_summary = summarize_openpose_frames(frames)
-        features, has_face = preprocess_degree_openpose_frames(frames)
+        frames = extract_mediapipe_frames_from_video(video_path)
+        keypoint_summary = summarize_mediapipe_frames(frames)
+        features, has_face = preprocess_degree_mediapipe_frames(frames)
 
         if not has_face:
             return {
@@ -102,7 +102,7 @@ def predict_degree(video_path: str) -> dict:
                 "has_face": False,
                 "num_used_frames": 0,
                 "model_status": "degree_ai_no_face",
-                "keypoint_extractor": "openpose",
+                "keypoint_extractor": "mediapipe",
                 "keypoint_summary": keypoint_summary,
                 "model_input_shape": list(features.shape),
                 "message": "얼굴 keypoint가 검출되지 않아 표현 정도를 보통으로 반환했습니다.",
@@ -133,11 +133,11 @@ def predict_degree(video_path: str) -> dict:
                 "num_used_frames": int(len(features)),
                 "model_status": "degree_ai_frame_280d_mlp_connected",
                 "model_path": str(_degree_model_path),
-                "keypoint_extractor": "openpose",
+                "keypoint_extractor": "mediapipe",
                 "keypoint_summary": keypoint_summary,
                 "model_input_shape": list(features.shape),
-                "model_input_type": "valid OpenPose face frames, averaged 1F×280D predictions",
-                "message": "Valid OpenPose face frames were preprocessed with the degree-training pipeline before MLP inference.",
+                "model_input_type": "valid MediaPipe face frames, averaged 1F×280D predictions",
+                "message": "Valid MediaPipe face frames were preprocessed with the degree-training pipeline before MLP inference.",
             }
 
         except Exception as model_error:
@@ -151,7 +151,7 @@ def predict_degree(video_path: str) -> dict:
                 "prob_strong": 0.0,
                 "has_face": has_face,
                 "model_status": "degree_ai_model_error",
-                "keypoint_extractor": "openpose",
+                "keypoint_extractor": "mediapipe",
                 "keypoint_summary": keypoint_summary,
                 "model_input_shape": list(features.shape),
                 "message": f"degree 모델 연결 또는 추론에 실패했습니다: {model_error}",

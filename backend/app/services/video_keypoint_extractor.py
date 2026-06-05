@@ -1,9 +1,4 @@
-import json
 import os
-import re
-import shutil
-import subprocess
-import tempfile
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
@@ -25,160 +20,349 @@ SENTENCE_FEATURE_DIM = 120
 DEGREE_FEATURE_DIM = 280
 
 
-def _openpose_candidates() -> list[Path]:
-    candidates = []
-    configured = os.environ.get("OPENPOSE_DEMO_PATH")
+BODY_25_FROM_MEDIAPIPE = [
+    0,  # 0 Nose
+    (11, 12),  # 1 Neck
+    12,  # 2 RShoulder
+    14,  # 3 RElbow
+    16,  # 4 RWrist
+    11,  # 5 LShoulder
+    13,  # 6 LElbow
+    15,  # 7 LWrist
+    (23, 24),  # 8 MidHip
+    24,  # 9 RHip
+    26,  # 10 RKnee
+    28,  # 11 RAnkle
+    23,  # 12 LHip
+    25,  # 13 LKnee
+    27,  # 14 LAnkle
+    5,  # 15 REye
+    2,  # 16 LEye
+    8,  # 17 REar
+    7,  # 18 LEar
+    31,  # 19 LBigToe
+    31,  # 20 LSmallToe
+    29,  # 21 LHeel
+    32,  # 22 RBigToe
+    32,  # 23 RSmallToe
+    30,  # 24 RHeel
+]
 
-    if configured:
-        configured_path = Path(configured).expanduser()
-        if configured_path.is_dir():
-            candidates.extend(
-                [
-                    configured_path / "OpenPoseDemo.exe",
-                    configured_path / "bin" / "OpenPoseDemo.exe",
-                    configured_path / "build" / "x64" / "Release" / "OpenPoseDemo.exe",
-                ]
-            )
+FACE_70_FROM_MEDIAPIPE = [
+    127, 234, 93, 132, 58, 172, 136, 150, 149, 176, 148, 152, 377, 400,
+    378, 379, 365, 70, 63, 105, 66, 107, 336, 296, 334, 293, 300, 168,
+    6, 197, 195, 5, 4, 45, 220, 115, 275, 440, 344, 33, 160, 158, 133,
+    153, 144, 362, 385, 387, 263, 373, 380, 61, 146, 91, 181, 84, 17,
+    314, 405, 321, 375, 291, 308, 78, 95, 88, 178, 87, 14,
+]
+
+
+def _landmark_visibility(landmark: Any) -> float:
+    visibility = getattr(landmark, "visibility", None)
+    presence = getattr(landmark, "presence", None)
+    values = [
+        float(value)
+        for value in (visibility, presence)
+        if value is not None and np.isfinite(float(value))
+    ]
+    if not values:
+        return 1.0
+    return float(min(values))
+
+
+def _mediapipe_landmarks(landmarks: Any) -> list[Any]:
+    if landmarks is None:
+        return []
+
+    legacy_landmarks = getattr(landmarks, "landmark", None)
+    if legacy_landmarks is not None:
+        return list(legacy_landmarks)
+
+    try:
+        return list(landmarks)
+    except TypeError:
+        return []
+
+
+def _mediapipe_point(landmarks: Any, index: int, width: int, height: int) -> list[float]:
+    items = _mediapipe_landmarks(landmarks)
+    if index < 0 or index >= len(items):
+        return [0.0, 0.0, 0.0]
+
+    landmark = items[index]
+    x = float(landmark.x) * width
+    y = float(landmark.y) * height
+    confidence = _landmark_visibility(landmark)
+
+    if not np.isfinite(x) or not np.isfinite(y) or confidence <= 0:
+        return [0.0, 0.0, 0.0]
+    return [x, y, confidence]
+
+
+def _mediapipe_average_point(
+    landmarks: Any,
+    indices: tuple[int, int],
+    width: int,
+    height: int,
+) -> list[float]:
+    first = _mediapipe_point(landmarks, indices[0], width, height)
+    second = _mediapipe_point(landmarks, indices[1], width, height)
+    confidence = min(first[2], second[2])
+    if confidence <= 0:
+        return [0.0, 0.0, 0.0]
+    return [
+        (first[0] + second[0]) / 2.0,
+        (first[1] + second[1]) / 2.0,
+        confidence,
+    ]
+
+
+def _flatten_points(points: Sequence[Sequence[float]]) -> list[float]:
+    return [float(value) for point in points for value in point]
+
+
+def _mediapipe_pose_keypoints(landmarks: Any, width: int, height: int) -> list[float]:
+    points = []
+    for source in BODY_25_FROM_MEDIAPIPE:
+        if isinstance(source, tuple):
+            points.append(_mediapipe_average_point(landmarks, source, width, height))
         else:
-            candidates.append(configured_path)
+            points.append(_mediapipe_point(landmarks, source, width, height))
+    return _flatten_points(points)
 
-    candidates.extend(
-        [
-            BACKEND_ROOT / "openpose" / "bin" / "OpenPoseDemo.exe",
-            BACKEND_ROOT / "openpose" / "build" / "x64" / "Release" / "OpenPoseDemo.exe",
-            BACKEND_ROOT / "tools" / "openpose" / "bin" / "OpenPoseDemo.exe",
-            BACKEND_ROOT / "tools" / "openpose" / "build" / "x64" / "Release" / "OpenPoseDemo.exe",
-        ]
+
+def _mediapipe_hand_keypoints(landmarks: Any, width: int, height: int) -> list[float]:
+    points = [
+        _mediapipe_point(landmarks, index, width, height)
+        for index in range(HAND_POINT_COUNT)
+    ]
+    return _flatten_points(points)
+
+
+def _mediapipe_face_keypoints(landmarks: Any, width: int, height: int) -> list[float]:
+    points = [
+        _mediapipe_point(landmarks, index, width, height)
+        for index in FACE_70_FROM_MEDIAPIPE
+    ]
+
+    if len(points) >= 52:
+        right_eye_center = np.mean(np.asarray(points[39:45], dtype=np.float32), axis=0)
+        left_eye_center = np.mean(np.asarray(points[45:51], dtype=np.float32), axis=0)
+        points.extend([right_eye_center.tolist(), left_eye_center.tolist()])
+
+    if len(points) < FACE_POINT_COUNT:
+        points.extend([[0.0, 0.0, 0.0]] * (FACE_POINT_COUNT - len(points)))
+
+    return _flatten_points(points[:FACE_POINT_COUNT])
+
+
+def _mediapipe_frame_to_keypoint_schema(results: Any, width: int, height: int) -> dict[str, Any]:
+    person = {
+        "person_id": [-1],
+        "pose_keypoints_2d": _mediapipe_pose_keypoints(
+            results.pose_landmarks, width, height
+        ),
+        "face_keypoints_2d": _mediapipe_face_keypoints(
+            results.face_landmarks, width, height
+        ),
+        "hand_left_keypoints_2d": _mediapipe_hand_keypoints(
+            results.left_hand_landmarks, width, height
+        ),
+        "hand_right_keypoints_2d": _mediapipe_hand_keypoints(
+            results.right_hand_landmarks, width, height
+        ),
+        "pose_keypoints_3d": [],
+        "face_keypoints_3d": [],
+        "hand_left_keypoints_3d": [],
+        "hand_right_keypoints_3d": [],
+    }
+
+    return {
+        "version": "mediapipe-holistic",
+        "people": [person],
+    }
+
+
+def _mediapipe_task_model_path() -> Path:
+    configured = os.environ.get("MEDIAPIPE_HOLISTIC_TASK_PATH") or os.environ.get(
+        "MEDIAPIPE_TASK_PATH"
     )
+    if configured:
+        model_path = Path(configured).expanduser()
+        if not model_path.is_file():
+            raise FileNotFoundError(
+                f"MEDIAPIPE_HOLISTIC_TASK_PATH does not exist: {model_path}"
+            )
+        return model_path.resolve()
 
-    for command_name in ("OpenPoseDemo.exe", "OpenPoseDemo", "openpose"):
-        resolved = shutil.which(command_name)
-        if resolved:
-            candidates.append(Path(resolved))
+    candidates = [
+        BACKEND_ROOT / "models" / "mediapipe" / "holistic_landmarker.task",
+        BACKEND_ROOT / "mediapipe" / "holistic_landmarker.task",
+        BACKEND_ROOT.parent / "models" / "mediapipe" / "holistic_landmarker.task",
+        BACKEND_ROOT.parent / "모델" / "mediapipe" / "holistic_landmarker.task",
+    ]
 
-    return candidates
-
-
-def _resolve_openpose_executable() -> Path:
-    for candidate in _openpose_candidates():
+    for candidate in candidates:
         if candidate.is_file():
             return candidate.resolve()
 
     raise FileNotFoundError(
-        "OpenPoseDemo executable was not found. Set OPENPOSE_DEMO_PATH to "
-        "OpenPoseDemo.exe, or place OpenPose under backend/openpose."
+        "MediaPipe 0.10.33+ requires holistic_landmarker.task. "
+        "Set MEDIAPIPE_HOLISTIC_TASK_PATH to the downloaded task model path."
     )
 
 
-def _resolve_openpose_model_folder(executable: Path) -> Path | None:
-    configured = os.environ.get("OPENPOSE_MODEL_FOLDER")
-    if configured:
-        model_folder = Path(configured).expanduser()
-        if not model_folder.is_dir():
-            raise FileNotFoundError(
-                f"OPENPOSE_MODEL_FOLDER does not exist: {model_folder}"
-            )
-        return model_folder.resolve()
+def _run_mediapipe_solutions(
+    capture: Any,
+    cv2: Any,
+    holistic_module: Any,
+    frame_step: int,
+    model_complexity: int,
+    min_detection_confidence: float,
+    min_tracking_confidence: float,
+) -> list[dict[str, Any]]:
+    frames = []
+    frame_index = 0
 
-    candidates = [
-        BACKEND_ROOT / "openpose" / "models",
-        BACKEND_ROOT / "tools" / "openpose" / "models",
-    ]
-    candidates.extend(parent / "models" for parent in executable.parents)
+    with holistic_module.Holistic(
+        static_image_mode=False,
+        model_complexity=model_complexity,
+        smooth_landmarks=True,
+        enable_segmentation=False,
+        refine_face_landmarks=False,
+        min_detection_confidence=min_detection_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+    ) as holistic:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
 
-    for candidate in candidates:
-        if candidate.is_dir():
-            return candidate.resolve()
+            if frame_index % frame_step != 0:
+                frame_index += 1
+                continue
 
-    return None
+            height, width = frame.shape[:2]
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb.flags.writeable = False
+            results = holistic.process(rgb)
+            frames.append(_mediapipe_frame_to_keypoint_schema(results, width, height))
+            frame_index += 1
+
+    return frames
 
 
-def _extract_frame_number(path: Path) -> int:
-    numbers = re.findall(r"\d+", path.stem)
-    return int(numbers[-1]) if numbers else -1
+def _run_mediapipe_tasks(
+    capture: Any,
+    cv2: Any,
+    mp: Any,
+    frame_step: int,
+    min_detection_confidence: float,
+    min_tracking_confidence: float,
+) -> list[dict[str, Any]]:
+    model_path = _mediapipe_task_model_path()
+    vision = mp.tasks.vision
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        fps = 30.0
+
+    options = vision.HolisticLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
+        running_mode=vision.RunningMode.VIDEO,
+        min_face_detection_confidence=min_detection_confidence,
+        min_face_landmarks_confidence=min_tracking_confidence,
+        min_pose_detection_confidence=min_detection_confidence,
+        min_pose_landmarks_confidence=min_tracking_confidence,
+        min_hand_landmarks_confidence=min_tracking_confidence,
+        output_face_blendshapes=False,
+        output_segmentation_mask=False,
+    )
+
+    frames = []
+    frame_index = 0
+    landmarker = vision.HolisticLandmarker.create_from_options(options)
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+
+            if frame_index % frame_step != 0:
+                frame_index += 1
+                continue
+
+            height, width = frame.shape[:2]
+            rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            timestamp_ms = int(frame_index * 1000.0 / fps)
+            results = landmarker.detect_for_video(image, timestamp_ms)
+            frames.append(_mediapipe_frame_to_keypoint_schema(results, width, height))
+            frame_index += 1
+    finally:
+        landmarker.close()
+
+    return frames
 
 
-def _run_openpose(video_path: str) -> tuple[dict[str, Any], ...]:
+def _run_mediapipe(video_path: str) -> tuple[dict[str, Any], ...]:
     video = Path(video_path).resolve()
     if not video.is_file():
         raise FileNotFoundError(f"Video file does not exist: {video}")
 
-    executable = _resolve_openpose_executable()
-    model_folder = _resolve_openpose_model_folder(executable)
-    timeout_seconds = int(os.environ.get("OPENPOSE_TIMEOUT_SECONDS", "300"))
+    try:
+        import cv2
+        import mediapipe as mp
+    except ImportError as error:
+        raise RuntimeError(
+            "MediaPipe keypoint extraction requires mediapipe and opencv-python."
+        ) from error
 
-    with tempfile.TemporaryDirectory(prefix="signtext_openpose_") as output_dir:
-        output_path = Path(output_dir).resolve()
-        command = [
-            str(executable),
-            "--video",
-            str(video),
-            "--write_json",
-            str(output_path),
-            "--display",
-            "0",
-            "--render_pose",
-            "0",
-            "--model_pose",
-            "BODY_25",
-            "--hand",
-            "--face",
-        ]
+    capture = cv2.VideoCapture(str(video))
+    if not capture.isOpened():
+        raise RuntimeError(f"Failed to open video for MediaPipe: {video}")
 
-        if model_folder is not None:
-            command.extend(["--model_folder", str(model_folder)])
+    frame_step = max(1, int(os.environ.get("MEDIAPIPE_FRAME_STEP", "1")))
+    model_complexity = int(os.environ.get("MEDIAPIPE_MODEL_COMPLEXITY", "1"))
+    min_detection_confidence = float(
+        os.environ.get("MEDIAPIPE_MIN_DETECTION_CONFIDENCE", "0.5")
+    )
+    min_tracking_confidence = float(
+        os.environ.get("MEDIAPIPE_MIN_TRACKING_CONFIDENCE", "0.5")
+    )
 
-        net_resolution = os.environ.get("OPENPOSE_NET_RESOLUTION")
-        if net_resolution:
-            command.extend(["--net_resolution", net_resolution])
-
-        working_directory = model_folder.parent if model_folder else executable.parent
-
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=str(working_directory),
-                capture_output=True,
-                check=False,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout_seconds,
+    try:
+        holistic_module = getattr(getattr(mp, "solutions", None), "holistic", None)
+        if holistic_module is not None:
+            frames = _run_mediapipe_solutions(
+                capture,
+                cv2,
+                holistic_module,
+                frame_step,
+                model_complexity,
+                min_detection_confidence,
+                min_tracking_confidence,
             )
-        except subprocess.TimeoutExpired as error:
-            raise RuntimeError(
-                f"OpenPose timed out after {timeout_seconds} seconds."
-            ) from error
-        except OSError as error:
-            raise RuntimeError(f"Failed to start OpenPose: {error}") from error
-
-        if completed.returncode != 0:
-            details = (completed.stderr or completed.stdout or "").strip()
-            if len(details) > 2000:
-                details = details[-2000:]
-            raise RuntimeError(
-                f"OpenPose failed with exit code {completed.returncode}: {details}"
+        else:
+            frames = _run_mediapipe_tasks(
+                capture,
+                cv2,
+                mp,
+                frame_step,
+                min_detection_confidence,
+                min_tracking_confidence,
             )
-
-        json_files = sorted(output_path.glob("*.json"), key=_extract_frame_number)
-        if not json_files:
-            raise RuntimeError("OpenPose completed without producing keypoint JSON files.")
-
-        frames = []
-        for json_path in json_files:
-            with json_path.open("r", encoding="utf-8") as file:
-                frame = json.load(file)
-            if isinstance(frame, dict):
-                frames.append(frame)
+    finally:
+        capture.release()
 
     if not frames:
-        raise RuntimeError("No valid OpenPose keypoint frames were produced.")
+        raise RuntimeError("No valid MediaPipe keypoint frames were produced.")
 
     return tuple(frames)
 
 
 @lru_cache(maxsize=16)
-def extract_openpose_frames_from_video(video_path: str) -> tuple[dict[str, Any], ...]:
-    return _run_openpose(video_path)
+def extract_mediapipe_frames_from_video(video_path: str) -> tuple[dict[str, Any], ...]:
+    return _run_mediapipe(video_path)
 
 
 def _get_people(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -283,7 +467,7 @@ def _word_frame_feature(data: dict[str, Any]) -> np.ndarray:
 def _resize_word_sequence(sequence: np.ndarray, target_frames: int) -> np.ndarray:
     current_len = len(sequence)
     if current_len == 0:
-        raise ValueError("OpenPose sequence is empty.")
+        raise ValueError("MediaPipe sequence is empty.")
     if current_len == target_frames:
         return sequence.astype(np.float32)
     if current_len > target_frames:
@@ -296,7 +480,7 @@ def _resize_word_sequence(sequence: np.ndarray, target_frames: int) -> np.ndarra
     return np.vstack([sequence, padding]).astype(np.float32)
 
 
-def preprocess_word_openpose_frames(
+def preprocess_word_mediapipe_frames(
     frames: Sequence[dict[str, Any]],
     target_frames: int = 30,
 ) -> np.ndarray:
@@ -308,8 +492,8 @@ def extract_word_411d_sequence_from_video(
     video_path: str,
     target_frames: int = 30,
 ) -> np.ndarray:
-    frames = extract_openpose_frames_from_video(video_path)
-    return preprocess_word_openpose_frames(frames, target_frames)
+    frames = extract_mediapipe_frames_from_video(video_path)
+    return preprocess_word_mediapipe_frames(frames, target_frames)
 
 
 def extract_411d_sequence_from_video(
@@ -475,7 +659,7 @@ def _resize_sentence_sequence(sequence: np.ndarray, target_frames: int) -> np.nd
     return np.concatenate([sequence, padding], axis=0).astype(np.float32)
 
 
-def preprocess_sentence_openpose_frames(
+def preprocess_sentence_mediapipe_frames(
     frames: Sequence[dict[str, Any]],
     target_frames: int = 30,
 ) -> np.ndarray:
@@ -490,8 +674,8 @@ def extract_sentence_120_sequence_from_video(
     video_path: str,
     target_frames: int = 30,
 ) -> np.ndarray:
-    frames = extract_openpose_frames_from_video(video_path)
-    return preprocess_sentence_openpose_frames(frames, target_frames)
+    frames = extract_mediapipe_frames_from_video(video_path)
+    return preprocess_sentence_mediapipe_frames(frames, target_frames)
 
 
 def _safe_point(points: np.ndarray, index: int) -> np.ndarray | None:
@@ -685,7 +869,7 @@ def _degree_frame_feature(
     return feature, normalized
 
 
-def preprocess_degree_openpose_frames(
+def preprocess_degree_mediapipe_frames(
     frames: Sequence[dict[str, Any]],
     min_face_confidence: float = 0.05,
 ) -> tuple[np.ndarray, bool]:
@@ -719,8 +903,8 @@ def extract_degree_280_sequence_from_video(
     video_path: str,
     min_face_confidence: float = 0.05,
 ) -> tuple[np.ndarray, bool]:
-    frames = extract_openpose_frames_from_video(video_path)
-    return preprocess_degree_openpose_frames(frames, min_face_confidence)
+    frames = extract_mediapipe_frames_from_video(video_path)
+    return preprocess_degree_mediapipe_frames(frames, min_face_confidence)
 
 
 def _keypoints_detected(values: Any) -> bool:
@@ -735,7 +919,7 @@ def _keypoints_detected(values: Any) -> bool:
     return bool(np.any(array))
 
 
-def summarize_openpose_frames(
+def summarize_mediapipe_frames(
     frames: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
     has_pose = False
@@ -763,7 +947,7 @@ def summarize_openpose_frames(
             )
 
     return {
-        "extractor": "openpose",
+        "extractor": "mediapipe",
         "sequence_length": int(len(frames)),
         "frame_dim": WORD_FEATURE_DIM,
         "has_pose": has_pose,

@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 
 from app.services.video_keypoint_extractor import (
-    extract_openpose_frames_from_video,
+    extract_mediapipe_frames_from_video,
     extract_sentence_120_sequence_from_video,
-    summarize_openpose_frames,
+    summarize_mediapipe_frames,
 )
 
 
@@ -121,13 +121,13 @@ def _predict_sentence(sequence_120):
 
 def predict_sentence(video_path: str) -> dict:
     """
-    Run the sentence GRU with the same OpenPose preprocessing used for training.
+    Run the sentence GRU with MediaPipe keypoints in the training-compatible shape.
     """
     try:
         sequence_120 = extract_sentence_120_sequence_from_video(
             video_path, target_frames=30
         )
-        summary = summarize_openpose_frames(extract_openpose_frames_from_video(video_path))
+        summary = summarize_mediapipe_frames(extract_mediapipe_frames_from_video(video_path))
 
         result = _predict_sentence(sequence_120)
 
@@ -144,7 +144,7 @@ def predict_sentence(video_path: str) -> dict:
             "model_input_type": "30F×120D sentence sequence",
             "source_keypoint_shape": [summary["sequence_length"], summary["frame_dim"]],
             "keypoint_summary": summary,
-            "message": "OpenPose keypoints were preprocessed with the sentence-training pipeline before GRU inference.",
+            "message": "MediaPipe keypoints were preprocessed with the sentence-training pipeline before GRU inference.",
         }
 
     except Exception as e:

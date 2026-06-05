@@ -4,10 +4,10 @@ import sys
 from pathlib import Path
 
 from app.services.video_keypoint_extractor import (
-    extract_openpose_frames_from_video,
+    extract_mediapipe_frames_from_video,
     extract_word_411d_sequence_from_video,
     extract_hands_126_from_411d,
-    summarize_openpose_frames,
+    summarize_mediapipe_frames,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -120,7 +120,7 @@ def predict_word(video_path: str) -> dict:
     """
     try:
         sequence = extract_word_411d_sequence_from_video(video_path, target_frames=30)
-        summary = summarize_openpose_frames(extract_openpose_frames_from_video(video_path))
+        summary = summarize_mediapipe_frames(extract_mediapipe_frames_from_video(video_path))
         hands_126 = extract_hands_126_from_411d(sequence)
         try:
             word_result = _predict_with_gru(sequence)
@@ -140,7 +140,7 @@ def predict_word(video_path: str) -> dict:
                 "model_input_type": "30F×126D hands keypoint",
                 "source_keypoint_shape": [summary["sequence_length"], summary["frame_dim"]],
                 "keypoint_summary": summary,
-                "message": "OpenPose keypoints were preprocessed with the word-training pipeline before GRU inference.",
+                "message": "MediaPipe keypoints were preprocessed with the word-training pipeline before GRU inference.",
             }
 
         except Exception as model_error:
