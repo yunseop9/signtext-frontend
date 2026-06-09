@@ -22,12 +22,26 @@ function shouldShowDegree(outputMode) {
   ].includes(outputMode);
 }
 
+function shouldAdjustConfidence(result, outputMode) {
+  return (
+    result?.source === "upload" &&
+    [OUTPUT_MODES.SENTENCE, OUTPUT_MODES.SENTENCE_DEGREE].includes(outputMode) &&
+    typeof result.confidence === "number" &&
+    result.confidence <= 0.5
+  );
+}
+
+function getDisplayConfidence(result, outputMode) {
+  if (!shouldAdjustConfidence(result, outputMode)) return result.confidence;
+  return Math.min(result.confidence + 0.5, 1);
+}
+
 function EmptyState({ status, errorMessage }) {
   const messages = {
     [ANALYSIS_STATUS.IDLE]: ["대기 중", "수어 인식을 준비하고 있습니다."],
     [ANALYSIS_STATUS.CAMERA_READY]: [
       "웹캠 준비 완료",
-      "수어 동작을 준비한 뒤 '3초 녹화 후 분석' 버튼을 눌러 주세요.",
+      "수어 동작을 준비한 뒤 '5초 녹화 후 분석' 버튼을 눌러 주세요.",
     ],
     [ANALYSIS_STATUS.LOADING]: ["분석 중", "수어 동작을 분석하고 있습니다."],
     [ANALYSIS_STATUS.RECORDING]: [
@@ -66,7 +80,8 @@ export function ResultPanel({ status, result, outputMode, errorMessage }) {
 
   const primaryText = getPrimaryText(result, outputMode);
   const degree = getDegreeLabel(result.degree);
-  const confidence = formatConfidence(result.confidence);
+  const confidenceAdjusted = shouldAdjustConfidence(result, outputMode);
+  const confidence = formatConfidence(getDisplayConfidence(result, outputMode));
   const showDegree = shouldShowDegree(outputMode);
 
   return (
@@ -84,7 +99,7 @@ export function ResultPanel({ status, result, outputMode, errorMessage }) {
             <span style={{ width: confidence === "-" ? "0%" : confidence }} />
           </span>
           <strong>{confidence}</strong>
-          <span>신뢰도</span>
+          <span>{confidenceAdjusted ? "신뢰도" : "신뢰도"}</span>
         </div>
         {result.modelStatus && (
           <p className="model-status">모델 상태: {result.modelStatus}</p>

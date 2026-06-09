@@ -11,6 +11,7 @@ export function MediaWorkspace({
   inputMode,
   status,
   keypoints,
+  keypointsLiveReady,
   outputMode,
   onOutputModeChange,
   videoRef,
@@ -33,7 +34,7 @@ export function MediaWorkspace({
   return (
     <section className="media-workspace" aria-label="수어 입력 영역">
       <div className="media-surface">
-        <KeypointOverlay keypoints={keypoints} />
+        <KeypointOverlay keypoints={keypoints} liveReady={keypointsLiveReady} />
         {showMediaStatus && (
           <div className="media-status">
             <StatusBadge status={status} />

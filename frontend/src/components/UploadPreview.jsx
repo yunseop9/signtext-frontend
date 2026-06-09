@@ -2,6 +2,15 @@ import { useEffect } from "react";
 
 export function UploadPreview({ previewUrl, file, videoRef, playRequestId }) {
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.pause();
+    video.currentTime = 0;
+    video.load();
+  }, [previewUrl, videoRef]);
+
+  useEffect(() => {
     if (!playRequestId || !videoRef.current) return undefined;
 
     const video = videoRef.current;

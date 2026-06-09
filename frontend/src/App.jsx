@@ -6,6 +6,7 @@ import { ANALYSIS_STATUS } from "./constants/analysisStatus";
 import { INPUT_MODES } from "./constants/inputModes";
 import { OUTPUT_MODES } from "./constants/outputModes";
 import { useAnalysisFlow } from "./hooks/useAnalysisFlow";
+import { useLiveKeypoints } from "./hooks/useLiveKeypoints";
 import { useWebcamStream } from "./hooks/useWebcamStream";
 import { recordWebcamClip } from "./utils/recordWebcamClip";
 
@@ -33,6 +34,26 @@ export default function App() {
   const webcamConnected = webcam.cameraStatus === webcam.CAMERA_STATUS.CONNECTED;
   const interactionLocked =
     isAnalyzing || status === ANALYSIS_STATUS.RECORDING;
+  const liveKeypointVideoRef =
+    inputMode === INPUT_MODES.WEBCAM ? webcam.videoRef : uploadVideoRef;
+  const liveKeypointsEnabled =
+    inputMode === INPUT_MODES.WEBCAM
+      ? webcamConnected && webcam.videoReady
+      : Boolean(selectedFile);
+  const liveKeypointResetKey = [
+    inputMode,
+    webcam.videoReady ? "video-ready" : "video-waiting",
+    selectedFile?.name ?? "",
+    selectedFile?.lastModified ?? "",
+  ].join(":");
+  const liveKeypoints = useLiveKeypoints(
+    liveKeypointVideoRef,
+    liveKeypointsEnabled,
+    liveKeypointResetKey,
+  );
+  const displayedKeypoints = liveKeypointsEnabled ? liveKeypoints : analysisKeypoints;
+  const keypointLiveReady =
+    inputMode === INPUT_MODES.WEBCAM ? webcam.videoReady : Boolean(selectedFile);
 
   const previewUrl = useMemo(() => {
     if (!selectedFile) return "";
@@ -153,7 +174,8 @@ export default function App() {
         <MediaWorkspace
           inputMode={inputMode}
           status={status}
-          keypoints={analysisKeypoints}
+          keypoints={displayedKeypoints}
+          keypointsLiveReady={keypointLiveReady}
           outputMode={outputMode}
           onOutputModeChange={handleOutputModeChange}
           videoRef={webcam.videoRef}

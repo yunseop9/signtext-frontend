@@ -33,6 +33,7 @@ degree_AI/outputs/*
 *.wmv
 
 *.log
+*.err
 
 # Node
 node_modules/
@@ -49,3 +50,4 @@ uploads/
 backend/uploads/
 results/
 backend/results/
+outputs/

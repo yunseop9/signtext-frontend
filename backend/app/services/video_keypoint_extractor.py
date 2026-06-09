@@ -1,4 +1,5 @@
 import os
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Sequence
@@ -18,6 +19,13 @@ FACE_LEN = FACE_POINT_COUNT * 3
 WORD_FEATURE_DIM = POSE_LEN + HAND_LEN + HAND_LEN + FACE_LEN
 SENTENCE_FEATURE_DIM = 120
 DEGREE_FEATURE_DIM = 280
+
+_live_holistic = None
+_live_holistic_options = None
+_live_holistic_lock = threading.Lock()
+_live_component_landmarkers = None
+_live_component_options = None
+_live_component_lock = threading.Lock()
 
 
 BODY_25_FROM_MEDIAPIPE = [
@@ -212,6 +220,233 @@ def _mediapipe_task_model_path() -> Path:
     )
 
 
+def _mediapipe_component_task_model_path(
+    env_name: str,
+    filename: str,
+    description: str,
+) -> Path:
+    configured = os.environ.get(env_name)
+    if configured:
+        model_path = Path(configured).expanduser()
+        if not model_path.is_file():
+            raise FileNotFoundError(f"{env_name} does not exist: {model_path}")
+        return model_path.resolve()
+
+    candidates = [
+        BACKEND_ROOT / "models" / "mediapipe" / filename,
+        BACKEND_ROOT / "mediapipe" / filename,
+        BACKEND_ROOT.parent / "models" / "mediapipe" / filename,
+        BACKEND_ROOT.parent / "모델" / "mediapipe" / filename,
+    ]
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+
+    raise FileNotFoundError(
+        f"MediaPipe {description} task model is required. "
+        f"Set {env_name} to the downloaded {filename} path."
+    )
+
+
+def _first_landmarks(groups: Any) -> Any:
+    if groups is None:
+        return None
+    try:
+        return groups[0] if groups else None
+    except (IndexError, TypeError):
+        return None
+
+
+def _hand_label(handedness: Any) -> str:
+    if not handedness:
+        return ""
+    first = handedness[0] if isinstance(handedness, list) else handedness
+    return str(
+        getattr(first, "category_name", None)
+        or getattr(first, "display_name", None)
+        or getattr(first, "categoryName", "")
+    ).lower()
+
+
+class _AdjustedLandmark:
+    def __init__(self, source: Any, x: float, y: float):
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(getattr(source, "z", 0.0))
+        self.visibility = getattr(source, "visibility", None)
+        self.presence = getattr(source, "presence", None)
+
+
+class _FaceResult:
+    def __init__(self, face_landmarks: Any):
+        self.face_landmarks = [face_landmarks] if face_landmarks else []
+
+
+def _face_result_has_landmarks(face_result: Any) -> bool:
+    return bool(_first_landmarks(getattr(face_result, "face_landmarks", None)))
+
+
+def _upper_body_crop_box(
+    pose_result: Any,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int]:
+    pose_landmarks = _first_landmarks(getattr(pose_result, "pose_landmarks", None))
+    landmarks = _mediapipe_landmarks(pose_landmarks)
+    upper_body_indices = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        11, 12, 13, 14, 15, 16,
+    ]
+    points = []
+
+    for index in upper_body_indices:
+        if index >= len(landmarks):
+            continue
+
+        landmark = landmarks[index]
+        confidence = _landmark_visibility(landmark)
+        x = float(getattr(landmark, "x", 0.0)) * width
+        y = float(getattr(landmark, "y", 0.0)) * height
+        if confidence <= 0.05 or not np.isfinite(x) or not np.isfinite(y):
+            continue
+        if x < -0.1 * width or x > 1.1 * width:
+            continue
+        if y < -0.1 * height or y > 1.1 * height:
+            continue
+        points.append((x, y))
+
+    if len(points) < 2:
+        return (
+            int(width * 0.25),
+            0,
+            int(width * 0.75),
+            int(height * 0.75),
+        )
+
+    array = np.asarray(points, dtype=np.float32)
+    x_min, y_min = np.min(array, axis=0)
+    x_max, y_max = np.max(array, axis=0)
+    box_width = max(float(x_max - x_min), width * 0.12)
+    box_height = max(float(y_max - y_min), height * 0.18)
+
+    pad_x = max(box_width * 0.35, width * 0.04)
+    pad_top = max(box_height * 0.45, height * 0.08)
+    pad_bottom = max(box_height * 0.25, height * 0.04)
+
+    x1 = max(0, int(x_min - pad_x))
+    y1 = max(0, int(y_min - pad_top))
+    x2 = min(width, int(x_max + pad_x))
+    y2 = min(height, int(y_max + pad_bottom))
+
+    if x2 - x1 < width * 0.18 or y2 - y1 < height * 0.18:
+        return (
+            int(width * 0.25),
+            0,
+            int(width * 0.75),
+            int(height * 0.75),
+        )
+
+    return x1, y1, x2, y2
+
+
+def _detect_face_on_upper_body_crop(
+    face_landmarker: Any,
+    frame: Any,
+    cv2: Any,
+    mp: Any,
+    pose_result: Any,
+    width: int,
+    height: int,
+) -> Any:
+    x1, y1, x2, y2 = _upper_body_crop_box(pose_result, width, height)
+    crop = frame[y1:y2, x1:x2]
+    if crop.size == 0:
+        return _FaceResult(None)
+
+    crop_height, crop_width = crop.shape[:2]
+    rgb = np.ascontiguousarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    crop_result = face_landmarker.detect(image)
+    crop_landmarks = _first_landmarks(
+        getattr(crop_result, "face_landmarks", None)
+    )
+    if not crop_landmarks:
+        return crop_result
+
+    adjusted_landmarks = [
+        _AdjustedLandmark(
+            landmark,
+            (x1 + float(landmark.x) * crop_width) / width,
+            (y1 + float(landmark.y) * crop_height) / height,
+        )
+        for landmark in _mediapipe_landmarks(crop_landmarks)
+    ]
+    return _FaceResult(adjusted_landmarks)
+
+
+def _detect_face_with_crop_fallback(
+    face_landmarker: Any,
+    frame: Any,
+    cv2: Any,
+    mp: Any,
+    pose_result: Any,
+    width: int,
+    height: int,
+) -> Any:
+    crop_result = _detect_face_on_upper_body_crop(
+        face_landmarker,
+        frame,
+        cv2,
+        mp,
+        pose_result,
+        width,
+        height,
+    )
+    if _face_result_has_landmarks(crop_result):
+        return crop_result
+
+    rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    return face_landmarker.detect(image)
+
+
+def _combined_component_results(
+    pose_result: Any,
+    hand_result: Any,
+    face_result: Any,
+) -> Any:
+    left_hand_landmarks = None
+    right_hand_landmarks = None
+
+    hand_landmarks = getattr(hand_result, "hand_landmarks", []) or []
+    handedness = getattr(hand_result, "handedness", []) or []
+    for index, landmarks in enumerate(hand_landmarks):
+        label = _hand_label(handedness[index] if index < len(handedness) else [])
+        if label == "left" and left_hand_landmarks is None:
+            left_hand_landmarks = landmarks
+        elif label == "right" and right_hand_landmarks is None:
+            right_hand_landmarks = landmarks
+        elif left_hand_landmarks is None:
+            left_hand_landmarks = landmarks
+        elif right_hand_landmarks is None:
+            right_hand_landmarks = landmarks
+
+    class ComponentResults:
+        pass
+
+    combined = ComponentResults()
+    combined.pose_landmarks = _first_landmarks(
+        getattr(pose_result, "pose_landmarks", None)
+    )
+    combined.face_landmarks = _first_landmarks(
+        getattr(face_result, "face_landmarks", None)
+    )
+    combined.left_hand_landmarks = left_hand_landmarks
+    combined.right_hand_landmarks = right_hand_landmarks
+    return combined
+
+
 def _run_mediapipe_solutions(
     capture: Any,
     cv2: Any,
@@ -220,12 +455,13 @@ def _run_mediapipe_solutions(
     model_complexity: int,
     min_detection_confidence: float,
     min_tracking_confidence: float,
+    static_image_mode: bool = False,
 ) -> list[dict[str, Any]]:
     frames = []
     frame_index = 0
 
     with holistic_module.Holistic(
-        static_image_mode=False,
+        static_image_mode=static_image_mode,
         model_complexity=model_complexity,
         smooth_landmarks=True,
         enable_segmentation=False,
@@ -252,7 +488,7 @@ def _run_mediapipe_solutions(
     return frames
 
 
-def _run_mediapipe_tasks(
+def _run_mediapipe_holistic_task(
     capture: Any,
     cv2: Any,
     mp: Any,
@@ -304,6 +540,356 @@ def _run_mediapipe_tasks(
     return frames
 
 
+def _run_mediapipe_component_tasks(
+    capture: Any,
+    cv2: Any,
+    mp: Any,
+    frame_step: int,
+    min_detection_confidence: float,
+    min_tracking_confidence: float,
+) -> list[dict[str, Any]]:
+    pose_model_path = _mediapipe_component_task_model_path(
+        "MEDIAPIPE_POSE_TASK_PATH",
+        "pose_landmarker_full.task",
+        "pose",
+    )
+    hand_model_path = _mediapipe_component_task_model_path(
+        "MEDIAPIPE_HAND_TASK_PATH",
+        "hand_landmarker.task",
+        "hand",
+    )
+    face_model_path = _mediapipe_component_task_model_path(
+        "MEDIAPIPE_FACE_TASK_PATH",
+        "face_landmarker.task",
+        "face",
+    )
+
+    vision = mp.tasks.vision
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        fps = 30.0
+
+    pose_options = vision.PoseLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(pose_model_path)),
+        running_mode=vision.RunningMode.VIDEO,
+        num_poses=1,
+        min_pose_detection_confidence=min_detection_confidence,
+        min_pose_presence_confidence=min_tracking_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+        output_segmentation_masks=False,
+    )
+    hand_options = vision.HandLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(hand_model_path)),
+        running_mode=vision.RunningMode.VIDEO,
+        num_hands=2,
+        min_hand_detection_confidence=min_detection_confidence,
+        min_hand_presence_confidence=min_tracking_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+    )
+    face_options = vision.FaceLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(face_model_path)),
+        running_mode=vision.RunningMode.IMAGE,
+        num_faces=1,
+        min_face_detection_confidence=min_detection_confidence,
+        min_face_presence_confidence=min_tracking_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+        output_face_blendshapes=False,
+        output_facial_transformation_matrixes=False,
+    )
+
+    frames = []
+    frame_index = 0
+    pose_landmarker = vision.PoseLandmarker.create_from_options(pose_options)
+    hand_landmarker = vision.HandLandmarker.create_from_options(hand_options)
+    face_landmarker = vision.FaceLandmarker.create_from_options(face_options)
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+
+            if frame_index % frame_step != 0:
+                frame_index += 1
+                continue
+
+            height, width = frame.shape[:2]
+            rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            timestamp_ms = int(frame_index * 1000.0 / fps)
+
+            pose_result = pose_landmarker.detect_for_video(image, timestamp_ms)
+            hand_result = hand_landmarker.detect_for_video(image, timestamp_ms)
+            face_result = _detect_face_with_crop_fallback(
+                face_landmarker,
+                frame,
+                cv2,
+                mp,
+                pose_result,
+                width,
+                height,
+            )
+            combined = _combined_component_results(
+                pose_result,
+                hand_result,
+                face_result,
+            )
+            frames.append(_mediapipe_frame_to_keypoint_schema(combined, width, height))
+            frame_index += 1
+    finally:
+        pose_landmarker.close()
+        hand_landmarker.close()
+        face_landmarker.close()
+
+    return frames
+
+
+def _run_mediapipe_tasks(
+    capture: Any,
+    cv2: Any,
+    mp: Any,
+    frame_step: int,
+    min_detection_confidence: float,
+    min_tracking_confidence: float,
+) -> list[dict[str, Any]]:
+    prefer_holistic = os.environ.get("MEDIAPIPE_PREFER_HOLISTIC_TASK") == "1"
+
+    if not prefer_holistic:
+        try:
+            return _run_mediapipe_component_tasks(
+                capture,
+                cv2,
+                mp,
+                frame_step,
+                min_detection_confidence,
+                min_tracking_confidence,
+            )
+        except FileNotFoundError:
+            capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        except Exception as component_error:
+            raise RuntimeError(
+                f"MediaPipe component task extraction failed: {component_error}"
+            ) from component_error
+
+    try:
+        return _run_mediapipe_holistic_task(
+            capture,
+            cv2,
+            mp,
+            frame_step,
+            min_detection_confidence,
+            min_tracking_confidence,
+        )
+    except Exception as holistic_error:
+        try:
+            capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            return _run_mediapipe_component_tasks(
+                capture,
+                cv2,
+                mp,
+                frame_step,
+                min_detection_confidence,
+                min_tracking_confidence,
+            )
+        except Exception as component_error:
+            raise RuntimeError(
+                "MediaPipe holistic task failed and component task fallback "
+                f"also failed. holistic={holistic_error}; "
+                f"components={component_error}"
+            ) from component_error
+
+
+class _SingleFrameCapture:
+    def __init__(self, frame: Any):
+        self._frame = frame
+        self._read = False
+
+    def read(self) -> tuple[bool, Any]:
+        if self._read:
+            return False, None
+        self._read = True
+        return True, self._frame
+
+    def get(self, prop_id: int) -> float:
+        return 30.0
+
+    def set(self, prop_id: int, value: float) -> bool:
+        if value <= 0:
+            self._read = False
+        return True
+
+
+def _mediapipe_options() -> tuple[int, float, float]:
+    model_complexity = int(os.environ.get("MEDIAPIPE_MODEL_COMPLEXITY", "1"))
+    min_detection_confidence = float(
+        os.environ.get("MEDIAPIPE_MIN_DETECTION_CONFIDENCE", "0.5")
+    )
+    min_tracking_confidence = float(
+        os.environ.get("MEDIAPIPE_MIN_TRACKING_CONFIDENCE", "0.5")
+    )
+    return model_complexity, min_detection_confidence, min_tracking_confidence
+
+
+def _get_live_holistic(
+    holistic_module: Any,
+    model_complexity: int,
+    min_detection_confidence: float,
+    min_tracking_confidence: float,
+) -> Any:
+    global _live_holistic, _live_holistic_options
+
+    options = (
+        model_complexity,
+        min_detection_confidence,
+        min_tracking_confidence,
+    )
+    if _live_holistic is not None and _live_holistic_options == options:
+        return _live_holistic
+
+    if _live_holistic is not None:
+        _live_holistic.close()
+
+    _live_holistic = holistic_module.Holistic(
+        static_image_mode=True,
+        model_complexity=model_complexity,
+        smooth_landmarks=True,
+        enable_segmentation=False,
+        refine_face_landmarks=False,
+        min_detection_confidence=min_detection_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+    )
+    _live_holistic_options = options
+    return _live_holistic
+
+
+def _get_live_component_landmarkers(
+    mp: Any,
+    min_detection_confidence: float,
+    min_tracking_confidence: float,
+) -> tuple[Any, Any, Any]:
+    global _live_component_landmarkers, _live_component_options
+
+    pose_model_path = _mediapipe_component_task_model_path(
+        "MEDIAPIPE_POSE_TASK_PATH",
+        "pose_landmarker_full.task",
+        "pose",
+    )
+    hand_model_path = _mediapipe_component_task_model_path(
+        "MEDIAPIPE_HAND_TASK_PATH",
+        "hand_landmarker.task",
+        "hand",
+    )
+    face_model_path = _mediapipe_component_task_model_path(
+        "MEDIAPIPE_FACE_TASK_PATH",
+        "face_landmarker.task",
+        "face",
+    )
+
+    options = (
+        str(pose_model_path),
+        str(hand_model_path),
+        str(face_model_path),
+        min_detection_confidence,
+        min_tracking_confidence,
+    )
+    if (
+        _live_component_landmarkers is not None
+        and _live_component_options == options
+    ):
+        return _live_component_landmarkers
+
+    if _live_component_landmarkers is not None:
+        for landmarker in _live_component_landmarkers:
+            landmarker.close()
+
+    vision = mp.tasks.vision
+    pose_options = vision.PoseLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(pose_model_path)),
+        running_mode=vision.RunningMode.IMAGE,
+        num_poses=1,
+        min_pose_detection_confidence=min_detection_confidence,
+        min_pose_presence_confidence=min_tracking_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+        output_segmentation_masks=False,
+    )
+    hand_options = vision.HandLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(hand_model_path)),
+        running_mode=vision.RunningMode.IMAGE,
+        num_hands=2,
+        min_hand_detection_confidence=min_detection_confidence,
+        min_hand_presence_confidence=min_tracking_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+    )
+    face_options = vision.FaceLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(face_model_path)),
+        running_mode=vision.RunningMode.IMAGE,
+        num_faces=1,
+        min_face_detection_confidence=min_detection_confidence,
+        min_face_presence_confidence=min_tracking_confidence,
+        min_tracking_confidence=min_tracking_confidence,
+        output_face_blendshapes=False,
+        output_facial_transformation_matrixes=False,
+    )
+
+    _live_component_landmarkers = (
+        vision.PoseLandmarker.create_from_options(pose_options),
+        vision.HandLandmarker.create_from_options(hand_options),
+        vision.FaceLandmarker.create_from_options(face_options),
+    )
+    _live_component_options = options
+    return _live_component_landmarkers
+
+
+def _run_mediapipe_on_frame(frame: Any, cv2: Any, mp: Any) -> dict[str, Any]:
+    model_complexity, min_detection_confidence, min_tracking_confidence = (
+        _mediapipe_options()
+    )
+
+    holistic_module = getattr(getattr(mp, "solutions", None), "holistic", None)
+    if holistic_module is not None:
+        height, width = frame.shape[:2]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb.flags.writeable = False
+        with _live_holistic_lock:
+            holistic = _get_live_holistic(
+                holistic_module,
+                model_complexity,
+                min_detection_confidence,
+                min_tracking_confidence,
+            )
+            results = holistic.process(rgb)
+        return _mediapipe_frame_to_keypoint_schema(results, width, height)
+    else:
+        height, width = frame.shape[:2]
+        rgb = np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        with _live_component_lock:
+            pose_landmarker, hand_landmarker, face_landmarker = (
+                _get_live_component_landmarkers(
+                    mp,
+                    min_detection_confidence,
+                    min_tracking_confidence,
+                )
+            )
+            pose_result = pose_landmarker.detect(image)
+            hand_result = hand_landmarker.detect(image)
+            face_result = _detect_face_with_crop_fallback(
+                face_landmarker,
+                frame,
+                cv2,
+                mp,
+                pose_result,
+                width,
+                height,
+            )
+
+        combined = _combined_component_results(
+            pose_result,
+            hand_result,
+            face_result,
+        )
+        return _mediapipe_frame_to_keypoint_schema(combined, width, height)
+
+
 def _run_mediapipe(video_path: str) -> tuple[dict[str, Any], ...]:
     video = Path(video_path).resolve()
     if not video.is_file():
@@ -322,12 +908,8 @@ def _run_mediapipe(video_path: str) -> tuple[dict[str, Any], ...]:
         raise RuntimeError(f"Failed to open video for MediaPipe: {video}")
 
     frame_step = max(1, int(os.environ.get("MEDIAPIPE_FRAME_STEP", "1")))
-    model_complexity = int(os.environ.get("MEDIAPIPE_MODEL_COMPLEXITY", "1"))
-    min_detection_confidence = float(
-        os.environ.get("MEDIAPIPE_MIN_DETECTION_CONFIDENCE", "0.5")
-    )
-    min_tracking_confidence = float(
-        os.environ.get("MEDIAPIPE_MIN_TRACKING_CONFIDENCE", "0.5")
+    model_complexity, min_detection_confidence, min_tracking_confidence = (
+        _mediapipe_options()
     )
 
     try:
@@ -363,6 +945,26 @@ def _run_mediapipe(video_path: str) -> tuple[dict[str, Any], ...]:
 @lru_cache(maxsize=16)
 def extract_mediapipe_frames_from_video(video_path: str) -> tuple[dict[str, Any], ...]:
     return _run_mediapipe(video_path)
+
+
+def extract_mediapipe_frame_from_image_bytes(content: bytes) -> dict[str, Any]:
+    if not content:
+        raise ValueError("Image content is empty.")
+
+    try:
+        import cv2
+        import mediapipe as mp
+    except ImportError as error:
+        raise RuntimeError(
+            "MediaPipe keypoint extraction requires mediapipe and opencv-python."
+        ) from error
+
+    encoded = np.frombuffer(content, dtype=np.uint8)
+    frame = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise ValueError("Failed to decode image content.")
+
+    return _run_mediapipe_on_frame(frame, cv2, mp)
 
 
 def _get_people(data: dict[str, Any]) -> list[dict[str, Any]]:

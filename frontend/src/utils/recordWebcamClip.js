@@ -1,4 +1,4 @@
-const DEFAULT_RECORDING_DURATION_MS = 3000;
+const DEFAULT_RECORDING_DURATION_MS = 5000;
 
 
 function getSupportedMimeType() {

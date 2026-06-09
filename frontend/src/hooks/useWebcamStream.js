@@ -15,6 +15,7 @@ export function useWebcamStream(enabled) {
   const [stream, setStream] = useState(null);
   const [cameraStatus, setCameraStatus] = useState(CAMERA_STATUS.NOT_REQUESTED);
   const [cameraError, setCameraError] = useState("");
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
@@ -28,6 +29,7 @@ export function useWebcamStream(enabled) {
       videoRef.current.srcObject = null;
     }
 
+    setVideoReady(false);
     setStream(null);
     setCameraStatus(CAMERA_STATUS.DISCONNECTED);
   }, []);
@@ -53,6 +55,12 @@ export function useWebcamStream(enabled) {
       });
 
       streamRef.current = nextStream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = nextStream;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        videoRef.current.play().catch(() => {});
+      }
       setStream(nextStream);
       setCameraStatus(CAMERA_STATUS.CONNECTED);
     } catch (error) {
@@ -78,14 +86,43 @@ export function useWebcamStream(enabled) {
   }, [enabled, requestCamera, stopCamera]);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+    const video = videoRef.current;
+    if (!video || !stream) {
+      setVideoReady(false);
+      return undefined;
     }
+
+    let mounted = true;
+
+    const markReady = () => {
+      if (!mounted) return;
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        setVideoReady(true);
+      }
+      video.play().catch(() => {});
+    };
+
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+
+    video.addEventListener("loadedmetadata", markReady);
+    video.addEventListener("canplay", markReady);
+    video.addEventListener("playing", markReady);
+    markReady();
+
+    return () => {
+      mounted = false;
+      video.removeEventListener("loadedmetadata", markReady);
+      video.removeEventListener("canplay", markReady);
+      video.removeEventListener("playing", markReady);
+    };
   }, [stream]);
 
   return {
     videoRef,
     stream,
+    videoReady,
     cameraStatus,
     cameraError,
     requestCamera,

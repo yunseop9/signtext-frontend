@@ -9,6 +9,10 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from app.services.degree_service_wrapper import predict_degree
 from app.services.semantic_service_wrapper import apply_semantic_postprocess
 from app.services.sentence_service_wrapper import predict_sentence
+from app.services.video_keypoint_extractor import (
+    extract_mediapipe_frame_from_image_bytes,
+    summarize_mediapipe_frames,
+)
 from app.services.word_service_wrapper import predict_word
 
 
@@ -28,11 +32,18 @@ ALLOWED_OUTPUT_MODES = {
 }
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 DEGREE_OUTPUT_MODES = {"degree", "word_degree", "sentence_degree"}
+UNRECOGNIZED_TEXT = "인식불가"
+UNRECOGNIZED_STATUSES = {"low_confidence"}
 
 
 def _result_failed(result: dict) -> bool:
     model_status = str(result.get("model_status", ""))
     return result.get("status") == "error" or model_status.endswith("_error")
+
+
+def _raw_result_unrecognized(result: dict) -> bool:
+    text = str(result.get("text", "")).strip()
+    return text == UNRECOGNIZED_TEXT or result.get("status") in UNRECOGNIZED_STATUSES
 
 
 def _skipped_degree_result() -> dict:
@@ -57,6 +68,25 @@ def _skipped_semantic_result(reason: str) -> dict:
         "modifier": "",
         "reason": reason,
         "processor_status": "skipped_model_error",
+    }
+
+
+def _unrecognized_semantic_result() -> dict:
+    return {
+        "apply_degree": False,
+        "final_text": UNRECOGNIZED_TEXT,
+        "target_expression": "",
+        "modifier": "",
+        "reason": "원문 인식 결과가 인식불가이므로 표현 정도 후처리를 적용하지 않습니다.",
+        "processor_status": "unrecognized",
+    }
+
+
+def _summary_to_keypoints(summary: dict) -> dict:
+    return {
+        "hands": bool(summary.get("has_left_hand") or summary.get("has_right_hand")),
+        "face": bool(summary.get("has_face")),
+        "pose": bool(summary.get("has_pose")),
     }
 
 
@@ -138,7 +168,7 @@ async def _predict_video(
     else:
         use_sentence = output_mode in {"sentence", "sentence_degree"} or mode == "sentence"
         raw_ai_result = (
-            predict_sentence(str(saved_path))
+            predict_sentence(str(saved_path), source_name=file.filename)
             if use_sentence
             else predict_word(str(saved_path))
         )
@@ -151,6 +181,13 @@ async def _predict_video(
                 "요청한 모델 중 오류가 발생해 후처리를 실행하지 않았습니다."
             )
             final_result = {"text": "", "modified": False}
+        elif _raw_result_unrecognized(raw_ai_result):
+            semantic_result = _unrecognized_semantic_result()
+            raw_ai_result["text"] = UNRECOGNIZED_TEXT
+            final_result = {
+                "text": UNRECOGNIZED_TEXT,
+                "modified": False,
+            }
         else:
             semantic_result = apply_semantic_postprocess(
                 mode=mode,
@@ -219,3 +256,22 @@ async def predict_webcam(
     output_mode: str = Form("word_degree"),
 ):
     return await _predict_video(file, mode, output_mode, input_type="webcam")
+
+
+@router.post("/keypoints")
+async def detect_keypoints(file: UploadFile = File(...)):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="이미지 내용이 비어 있습니다.")
+
+    try:
+        frame = extract_mediapipe_frame_from_image_bytes(content)
+        summary = summarize_mediapipe_frames([frame])
+    except Exception as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    return {
+        "status": "success",
+        "keypoints": _summary_to_keypoints(summary),
+        "keypoint_summary": summary,
+    }
