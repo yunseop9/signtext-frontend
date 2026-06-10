@@ -7,7 +7,7 @@ function getWebcamLabel(status) {
   if (status === ANALYSIS_STATUS.SUCCESS || status === ANALYSIS_STATUS.LLM_FALLBACK) return "다시 분석";
   if (status === ANALYSIS_STATUS.CAMERA_DENIED) return "권한 필요";
   if (status === ANALYSIS_STATUS.ERROR) return "다시 시도";
-  return "5초 녹화 후 분석";
+  return "시작";
 }
 
 function getUploadLabel(status) {

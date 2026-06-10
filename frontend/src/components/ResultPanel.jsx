@@ -60,7 +60,7 @@ function EmptyState({ status, errorMessage }) {
     [ANALYSIS_STATUS.IDLE]: ["대기 중", "수어 인식을 준비하고 있습니다."],
     [ANALYSIS_STATUS.CAMERA_READY]: [
       "웹캠 준비 완료",
-      "수어 동작을 준비한 뒤 '5초 녹화 후 분석' 버튼을 눌러 주세요.",
+      "수어 동작을 준비한 뒤 '시작' 버튼을 눌러 주세요.",
     ],
     [ANALYSIS_STATUS.LOADING]: ["분석 중", "수어 동작을 분석하고 있습니다."],
     [ANALYSIS_STATUS.RECORDING]: [
