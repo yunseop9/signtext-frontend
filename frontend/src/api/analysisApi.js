@@ -99,6 +99,9 @@ async function requestVideoAnalysis({ file, outputMode, endpoint, source, signal
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: "POST",
+      headers: {
+        "ngrok-skip-browser-warning": "true",
+      },
       body: formData,
       signal,
     });
