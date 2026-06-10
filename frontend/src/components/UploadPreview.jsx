@@ -38,9 +38,9 @@ export function UploadPreview({ previewUrl, file, videoRef, playRequestId }) {
         <video
           className="upload-video"
           src={previewUrl}
-          controls
+          controls={Boolean(playRequestId)}
           muted
-          preload="auto"
+          preload="metadata"
           ref={videoRef}
         />
       ) : (

@@ -97,6 +97,7 @@ export default function App() {
     resetAnalysis(ANALYSIS_STATUS.IDLE);
     if (nextMode === INPUT_MODES.UPLOAD) {
       setSelectedFile(null);
+      setUploadPlayRequestId(0);
     }
   }, [interactionLocked, resetAnalysis]);
 
@@ -104,6 +105,7 @@ export default function App() {
     if (interactionLocked) return;
 
     setSelectedFile(file);
+    setUploadPlayRequestId(0);
     resetAnalysis(ANALYSIS_STATUS.IDLE);
   }, [interactionLocked, resetAnalysis]);
 
