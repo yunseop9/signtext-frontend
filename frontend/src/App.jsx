@@ -38,9 +38,10 @@ export default function App() {
   const liveKeypointVideoRef =
     inputMode === INPUT_MODES.WEBCAM ? webcam.videoRef : uploadVideoRef;
   const liveKeypointsEnabled =
-    inputMode === INPUT_MODES.WEBCAM
+    status !== ANALYSIS_STATUS.LOADING &&
+    (inputMode === INPUT_MODES.WEBCAM
       ? webcamConnected
-      : Boolean(selectedFile);
+      : Boolean(selectedFile));
   const liveKeypointResetKey = [
     inputMode,
     webcam.stream?.id ?? "",
