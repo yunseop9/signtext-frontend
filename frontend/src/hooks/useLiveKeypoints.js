@@ -8,7 +8,7 @@ const EMPTY_KEYPOINTS = {
   pose: false,
 };
 
-const SNAPSHOT_INTERVAL_MS = 300;
+const SNAPSHOT_INTERVAL_MS = 1000;
 const SNAPSHOT_MAX_WIDTH = 480;
 
 
