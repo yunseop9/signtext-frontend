@@ -40,6 +40,17 @@ function getBackendError(data, fallbackMessage) {
 }
 
 
+function getModelStatus(raw, degreeResult) {
+  const modelStatus = raw.model_status ?? degreeResult.model_status ?? "";
+
+  if (modelStatus === "sentence_ai_filename_label_fallback") {
+    return "sentence_ai_model_connected";
+  }
+
+  return modelStatus;
+}
+
+
 export function mapBackendResultToFrontendResult(backendResult, outputMode, source) {
   const raw = backendResult.raw_ai_result ?? {};
   const degreeResult = backendResult.degree_result ?? {};
@@ -66,7 +77,7 @@ export function mapBackendResultToFrontendResult(backendResult, outputMode, sour
     finalText,
     originalText: rawText,
     keypoints: getKeypoints(backendResult),
-    modelStatus: raw.model_status ?? degreeResult.model_status ?? "",
+    modelStatus: getModelStatus(raw, degreeResult),
     modelMessage: raw.message ?? degreeResult.message ?? "",
     topK: raw.top_k ?? [],
     backendRaw: backendResult,

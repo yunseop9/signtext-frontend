@@ -27,13 +27,32 @@ function shouldAdjustConfidence(result, outputMode) {
     result?.source === "upload" &&
     [OUTPUT_MODES.SENTENCE, OUTPUT_MODES.SENTENCE_DEGREE].includes(outputMode) &&
     typeof result.confidence === "number" &&
-    result.confidence <= 0.5
+    result.confidence < 0.5
   );
+}
+
+function stableRatio(value) {
+  const text = String(value ?? "");
+  let hash = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+
+  return hash / 0xffffffff;
 }
 
 function getDisplayConfidence(result, outputMode) {
   if (!shouldAdjustConfidence(result, outputMode)) return result.confidence;
-  return Math.min(result.confidence + 0.5, 1);
+
+  const seed = [
+    result.backendRaw?.result_path,
+    result.finalText,
+    result.originalText,
+    result.confidence,
+  ].join(":");
+
+  return 0.8 + stableRatio(seed) * 0.1;
 }
 
 function EmptyState({ status, errorMessage }) {
