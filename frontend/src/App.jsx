@@ -38,10 +38,11 @@ export default function App() {
     inputMode === INPUT_MODES.WEBCAM ? webcam.videoRef : uploadVideoRef;
   const liveKeypointsEnabled =
     inputMode === INPUT_MODES.WEBCAM
-      ? webcamConnected && webcam.videoReady
+      ? webcamConnected
       : Boolean(selectedFile);
   const liveKeypointResetKey = [
     inputMode,
+    webcam.stream?.id ?? "",
     webcam.videoReady ? "video-ready" : "video-waiting",
     selectedFile?.name ?? "",
     selectedFile?.lastModified ?? "",
