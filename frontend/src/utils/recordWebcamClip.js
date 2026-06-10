@@ -13,60 +13,6 @@ function getSupportedMimeType() {
 }
 
 
-function createMirroredStream(sourceStream) {
-  const sourceVideo = document.createElement("video");
-  sourceVideo.srcObject = sourceStream;
-  sourceVideo.muted = true;
-  sourceVideo.playsInline = true;
-
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  const sourceTrack = sourceStream.getVideoTracks()[0];
-  const settings = sourceTrack?.getSettings?.() ?? {};
-  const fps = settings.frameRate || 30;
-
-  let animationFrameId = null;
-  let stopped = false;
-
-  const drawFrame = () => {
-    if (stopped) return;
-
-    if (sourceVideo.videoWidth && sourceVideo.videoHeight && context) {
-      if (canvas.width !== sourceVideo.videoWidth) {
-        canvas.width = sourceVideo.videoWidth;
-      }
-      if (canvas.height !== sourceVideo.videoHeight) {
-        canvas.height = sourceVideo.videoHeight;
-      }
-
-      context.save();
-      context.translate(canvas.width, 0);
-      context.scale(-1, 1);
-      context.drawImage(sourceVideo, 0, 0, canvas.width, canvas.height);
-      context.restore();
-    }
-
-    animationFrameId = window.requestAnimationFrame(drawFrame);
-  };
-
-  const mirroredStream = canvas.captureStream(fps);
-  sourceVideo.play().catch(() => {});
-  drawFrame();
-
-  return {
-    stream: mirroredStream,
-    stop: () => {
-      stopped = true;
-      if (animationFrameId) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-      mirroredStream.getTracks().forEach((track) => track.stop());
-      sourceVideo.srcObject = null;
-    },
-  };
-}
-
-
 export function recordWebcamClip(
   stream,
   durationMs = DEFAULT_RECORDING_DURATION_MS,
@@ -86,9 +32,8 @@ export function recordWebcamClip(
   const options = mimeType ? { mimeType } : undefined;
 
   return new Promise((resolve, reject) => {
-    const mirrored = createMirroredStream(stream);
     const chunks = [];
-    const recorder = new MediaRecorder(mirrored.stream, options);
+    const recorder = new MediaRecorder(stream, options);
     let timerId;
     let aborted = false;
 
@@ -100,12 +45,6 @@ export function recordWebcamClip(
       }
     };
 
-    const cleanup = () => {
-      window.clearTimeout(timerId);
-      signal?.removeEventListener("abort", abortRecording);
-      mirrored.stop();
-    };
-
     recorder.addEventListener("dataavailable", (event) => {
       if (event.data.size > 0) {
         chunks.push(event.data);
@@ -113,12 +52,14 @@ export function recordWebcamClip(
     });
 
     recorder.addEventListener("error", (event) => {
-      cleanup();
+      window.clearTimeout(timerId);
+      signal?.removeEventListener("abort", abortRecording);
       reject(event.error ?? new Error("웹캠 녹화 중 오류가 발생했습니다."));
     });
 
     recorder.addEventListener("stop", () => {
-      cleanup();
+      window.clearTimeout(timerId);
+      signal?.removeEventListener("abort", abortRecording);
 
       if (aborted) {
         reject(new DOMException("Recording was stopped.", "AbortError"));

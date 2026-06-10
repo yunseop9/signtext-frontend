@@ -136,10 +136,6 @@ button {
   width: 100%;
 }
 
-.webcam-video {
-  transform: scaleX(-1);
-}
-
 .upload-video {
   object-fit: contain;
 }
