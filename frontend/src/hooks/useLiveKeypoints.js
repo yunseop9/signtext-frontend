@@ -24,7 +24,11 @@ function captureVideoSnapshot(video, canvas) {
   const context = canvas.getContext("2d");
   if (!context) return Promise.resolve(null);
 
+  context.save();
+  context.translate(canvas.width, 0);
+  context.scale(-1, 1);
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  context.restore();
 
   return new Promise((resolve) => {
     canvas.toBlob(resolve, "image/jpeg", 0.72);
