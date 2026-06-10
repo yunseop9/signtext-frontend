@@ -2,7 +2,7 @@ import { ANALYSIS_STATUS } from "../constants/analysisStatus";
 import { INPUT_MODES } from "../constants/inputModes";
 
 function getWebcamLabel(status) {
-  if (status === ANALYSIS_STATUS.RECORDING) return "5초 녹화 중";
+  if (status === ANALYSIS_STATUS.RECORDING) return "중단";
   if (status === ANALYSIS_STATUS.LOADING) return "모델 분석 중";
   if (status === ANALYSIS_STATUS.SUCCESS || status === ANALYSIS_STATUS.LLM_FALLBACK) return "다시 분석";
   if (status === ANALYSIS_STATUS.CAMERA_DENIED) return "권한 필요";

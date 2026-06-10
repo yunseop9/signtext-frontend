@@ -16,6 +16,7 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadPlayRequestId, setUploadPlayRequestId] = useState(0);
   const uploadVideoRef = useRef(null);
+  const webcamRecordingControllerRef = useRef(null);
 
   const {
     status,
@@ -130,28 +131,55 @@ export default function App() {
   }, [resetAnalysis]);
 
   const handleWebcamStart = useCallback(async () => {
+    if (status === ANALYSIS_STATUS.RECORDING) {
+      webcamRecordingControllerRef.current?.abort();
+      webcamRecordingControllerRef.current = null;
+      resetAnalysis(
+        webcamConnected ? ANALYSIS_STATUS.CAMERA_READY : ANALYSIS_STATUS.IDLE,
+      );
+      return;
+    }
+
     if (!webcam.stream) {
       setStatus(ANALYSIS_STATUS.ERROR);
-      setErrorMessage("웹캠이 연결된 뒤 다시 시도해 주세요.");
+      setErrorMessage("웹캠이 연결되지 않았습니다. 다시 시도해 주세요.");
       return;
     }
 
     setStatus(ANALYSIS_STATUS.RECORDING);
     setErrorMessage("");
 
+    const recordingController = new AbortController();
+    webcamRecordingControllerRef.current = recordingController;
+
     try {
-      const videoBlob = await recordWebcamClip(webcam.stream);
+      const videoBlob = await recordWebcamClip(
+        webcam.stream,
+        undefined,
+        recordingController.signal,
+      );
+      webcamRecordingControllerRef.current = null;
       await runWebcamAnalysis(videoBlob, outputMode);
     } catch (error) {
+      webcamRecordingControllerRef.current = null;
+      if (error?.name === "AbortError") {
+        resetAnalysis(
+          webcamConnected ? ANALYSIS_STATUS.CAMERA_READY : ANALYSIS_STATUS.IDLE,
+        );
+        return;
+      }
       setStatus(ANALYSIS_STATUS.ERROR);
       setErrorMessage(error?.message ?? "웹캠 영상을 녹화하지 못했습니다.");
     }
   }, [
     outputMode,
+    resetAnalysis,
     runWebcamAnalysis,
     setErrorMessage,
     setStatus,
+    status,
     webcam.stream,
+    webcamConnected,
   ]);
 
   const handleOutputModeChange = useCallback((nextOutputMode) => {

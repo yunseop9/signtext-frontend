@@ -84,9 +84,7 @@ export function MediaWorkspace({
             disabled={
               isUpload
                 ? !selectedFile && status !== ANALYSIS_STATUS.LOADING
-                : isAnalyzing ||
-                  status === ANALYSIS_STATUS.RECORDING ||
-                  cameraStatus !== "connected"
+                : isAnalyzing || cameraStatus !== "connected"
             }
           />
         </div>
