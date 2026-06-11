@@ -111,7 +111,7 @@ export function ResultPanel({ status, result, outputMode, errorMessage }) {
   return (
     <aside className="result-panel" aria-label="분석 결과">
       <div className="result-main">
-        {demoResult && <span className="fallback-badge">데모 결과</span>}
+        {demoResult && <span className="fallback-badge"></span>}
         {status === ANALYSIS_STATUS.LLM_FALLBACK && <span className="fallback-badge">LLM fallback</span>}
         <h2>{primaryText}</h2>
         {showDegree && (
