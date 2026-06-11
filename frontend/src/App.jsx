@@ -12,7 +12,7 @@ import { recordWebcamClip } from "./utils/recordWebcamClip";
 
 export default function App() {
   const [inputMode, setInputMode] = useState(INPUT_MODES.WEBCAM);
-  const [outputMode, setOutputMode] = useState(OUTPUT_MODES.SENTENCE_DEGREE);
+  const [outputMode, setOutputMode] = useState(OUTPUT_MODES.WORD_DEGREE);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadPlayRequestId, setUploadPlayRequestId] = useState(0);
   const uploadVideoRef = useRef(null);
