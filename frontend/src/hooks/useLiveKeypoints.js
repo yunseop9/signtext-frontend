@@ -36,9 +36,9 @@ export function useLiveKeypoints(videoRef, enabled, resetKey) {
   const [liveKeypoints, setLiveKeypoints] = useState(EMPTY_KEYPOINTS);
 
   useEffect(() => {
-    setLiveKeypoints(EMPTY_KEYPOINTS);
-
     if (!enabled) return undefined;
+
+    setLiveKeypoints(EMPTY_KEYPOINTS);
 
     let stopped = false;
     let timerId = null;
