@@ -54,7 +54,10 @@ export default function App() {
     liveKeypointsEnabled,
     liveKeypointResetKey,
   );
-  const displayedKeypoints = liveKeypointsEnabled ? liveKeypoints : analysisKeypoints;
+  const displayedKeypoints =
+    liveKeypointsEnabled || status === ANALYSIS_STATUS.LOADING
+      ? liveKeypoints
+      : analysisKeypoints;
   const keypointLiveReady =
     inputMode === INPUT_MODES.WEBCAM ? webcam.videoReady : Boolean(selectedFile);
 
